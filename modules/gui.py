@@ -91,6 +91,31 @@ _TRACER_CHOSEN = "#00ff88"
 _TRACER_OTHER = "#888888"
 _TRACER_DEADZONE = "#ffcc00"
 
+# Modifier-only keysyms — ignored during hotkey rebinding since they can't
+# be pressed on their own as a real toggle key (a bare Shift/Ctrl/Alt tap
+# doesn't mean anything as a hotkey the way it does as a modifier).
+_REBIND_IGNORED_KEYSYMS = {
+    "Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R",
+    "Super_L", "Super_R", "Caps_Lock", "Num_Lock", "Scroll_Lock",
+}
+# A few Tk keysym -> pynput Key-name mismatches worth covering explicitly
+# (Tk's keysym and pynput's own Key enum names disagree here) — everything
+# else is just keysym.lower(), which lines up for letters, digits, F-keys,
+# and the arrow/space/etc. names already used elsewhere in config.yaml.
+_REBIND_KEYSYM_OVERRIDES = {
+    "escape": "esc",
+    "return": "enter",
+    "prior": "page_up",
+    "next": "page_down",
+}
+
+
+def _tk_keysym_to_hotkey_name(keysym: str) -> str | None:
+    if keysym in _REBIND_IGNORED_KEYSYMS:
+        return None
+    name = keysym.lower()
+    return _REBIND_KEYSYM_OVERRIDES.get(name, name)
+
 
 class ControlPanel:
     def __init__(
@@ -104,6 +129,11 @@ class ControlPanel:
         pvp_running_event: threading.Event | None = None,
         pvp_log_queue: "queue.Queue[str] | None" = None,
         pvp_spam=None,
+        auto_clicker_running_event: threading.Event | None = None,
+        auto_clicker_log_queue: "queue.Queue[str] | None" = None,
+        auto_clicker=None,
+        hotkey_listener=None,
+        config_path: str = "config.yaml",
     ):
         self.story_running_event = story_running_event
         self.towers_running_event = towers_running_event
@@ -113,6 +143,12 @@ class ControlPanel:
         self.pvp_running_event = pvp_running_event
         self.pvp_log_queue = pvp_log_queue
         self.pvp_spam = pvp_spam
+        self.auto_clicker_running_event = auto_clicker_running_event
+        self.auto_clicker_log_queue = auto_clicker_log_queue
+        self.auto_clicker = auto_clicker
+        self.hotkey_listener = hotkey_listener
+        self.config_path = config_path
+        self._rebinding = False
 
         self.screen_region = config["screen"]["game_region"]  # [x, y, w, h]
 
@@ -131,6 +167,7 @@ class ControlPanel:
         self.stop_key = hk["stop"].upper()
         self.towers_key = hk.get("towers_toggle", "f8").upper()
         self.pvp_key = hk.get("pvp_toggle", "p").upper()
+        self.auto_clicker_key = hk.get("auto_clicker_toggle", "c").upper()
 
         self._sct = mss.mss()
         self._banner_visible = False
@@ -157,6 +194,7 @@ class ControlPanel:
         self._build_story_tab()
         self._build_towers_tab()
         self._build_pvp_tab()
+        self._build_auto_clicker_tab()
         self._show_tab("story")
         self._build_banner()
         self._build_elo_overlay()
@@ -178,7 +216,7 @@ class ControlPanel:
         bar = tk.Frame(self.root, bg=_BG)
         bar.pack(fill="x", padx=18)
         self._tab_buttons: dict[str, tk.Button] = {}
-        for key, label in (("story", "Story"), ("towers", "Towers"), ("pvp", "PvP")):
+        for key, label in (("story", "Story"), ("towers", "Towers"), ("pvp", "PvP"), ("autoclicker", "Auto Clicker")):
             btn = tk.Button(
                 bar, text=label, font=("Segoe UI", 10, "bold"),
                 relief="flat", bd=0, width=14,
@@ -198,7 +236,11 @@ class ControlPanel:
         self._story_frame.pack_forget()
         self._towers_frame.pack_forget()
         self._pvp_frame.pack_forget()
-        frame = {"story": self._story_frame, "towers": self._towers_frame, "pvp": self._pvp_frame}[which]
+        self._autoclicker_frame.pack_forget()
+        frame = {
+            "story": self._story_frame, "towers": self._towers_frame,
+            "pvp": self._pvp_frame, "autoclicker": self._autoclicker_frame,
+        }[which]
         frame.pack(fill="both", expand=True)
 
     # -- Story tab ----------------------------------------------------------------
@@ -405,6 +447,126 @@ class ControlPanel:
         if self.pvp_running_event is not None:
             self.pvp_running_event.clear()
 
+    # -- Auto Clicker tab -------------------------------------------------------------
+
+    def _build_auto_clicker_tab(self) -> None:
+        frame = tk.Frame(self._content, bg=_BG)
+        self._autoclicker_frame = frame
+
+        self._autoclicker_indicator = tk.Label(
+            frame, text="STOPPED", font=("Segoe UI", 14, "bold"),
+            fg=_ACCENT_STOPPED, bg=_BG,
+        )
+        self._autoclicker_indicator.pack(pady=(4, 10))
+
+        btn_frame = tk.Frame(frame, bg=_BG)
+        btn_frame.pack(pady=4)
+        tk.Button(
+            btn_frame, text="▶  Start", font=("Segoe UI", 11, "bold"),
+            bg=_ACCENT_RUNNING, fg="#0a2e17", activebackground="#33c266",
+            relief="flat", width=10, command=self._autoclicker_start,
+        ).pack(side="left", padx=6)
+        tk.Button(
+            btn_frame, text="■  Stop", font=("Segoe UI", 11, "bold"),
+            bg=_ACCENT_STOPPED, fg="#3a0a0a", activebackground="#e04444",
+            relief="flat", width=10, command=self._autoclicker_stop,
+        ).pack(side="left", padx=6)
+
+        rebind_frame = tk.Frame(frame, bg=_BG)
+        rebind_frame.pack(pady=(6, 2))
+        self._autoclicker_hotkey_label = tk.Label(
+            rebind_frame, text=f"Hotkey: {self.auto_clicker_key}", font=("Segoe UI", 9), fg="#7a7a7a", bg=_BG,
+        )
+        self._autoclicker_hotkey_label.pack(side="left", padx=(0, 8))
+        self._autoclicker_rebind_btn = tk.Button(
+            rebind_frame, text="Rebind", font=("Segoe UI", 8, "bold"),
+            bg=_PANEL, fg=_FG, activebackground="#3a3a3a",
+            relief="flat", width=8, command=self._autoclicker_start_rebind,
+        )
+        self._autoclicker_rebind_btn.pack(side="left")
+
+        tk.Label(
+            frame, text="Clicks at the current cursor position nonstop while running —\nmove the mouse where you want it clicking.",
+            font=("Segoe UI", 9), fg="#7a7a7a", bg=_BG, justify="center",
+        ).pack(pady=(6, 8))
+
+        cell = tk.Frame(frame, bg=_PANEL)
+        cell.pack(pady=(0, 10), fill="x")
+        self._autoclicker_clicks_label = tk.Label(cell, text="0", font=("Segoe UI", 15, "bold"), fg=_FG, bg=_PANEL)
+        self._autoclicker_clicks_label.pack(pady=(6, 0))
+        tk.Label(cell, text="Clicks", font=("Segoe UI", 8), fg=_MUTED, bg=_PANEL).pack(pady=(0, 6))
+
+        tk.Label(frame, text="Activity Log", font=("Segoe UI", 9, "bold"), fg=_MUTED, bg=_BG).pack(
+            anchor="w", pady=(4, 2)
+        )
+        log_frame = tk.Frame(frame, bg=_BG)
+        log_frame.pack(fill="both", expand=True, pady=(0, 16))
+        scrollbar = tk.Scrollbar(log_frame)
+        scrollbar.pack(side="right", fill="y")
+        self._autoclicker_log_text = tk.Text(
+            log_frame, height=10, width=44, bg="#111111", fg="#c8c8c8",
+            font=("Consolas", 8), relief="flat", wrap="word",
+            yscrollcommand=scrollbar.set, state="disabled",
+        )
+        self._autoclicker_log_text.pack(side="left", fill="both", expand=True)
+        scrollbar.configure(command=self._autoclicker_log_text.yview)
+
+    def _autoclicker_start(self) -> None:
+        if self.auto_clicker_running_event is None:
+            return
+        self.auto_clicker_running_event.set()
+        self.story_running_event.clear()
+        self.towers_running_event.clear()
+
+    def _autoclicker_stop(self) -> None:
+        if self.auto_clicker_running_event is not None:
+            self.auto_clicker_running_event.clear()
+
+    def _autoclicker_start_rebind(self) -> None:
+        if self._rebinding:
+            return
+        self._rebinding = True
+        self._autoclicker_rebind_btn.configure(text="...", state="disabled")
+        self._autoclicker_hotkey_label.configure(text="Press any key…")
+        self.root.focus_force()
+        self.root.bind_all("<KeyPress>", self._autoclicker_capture_rebind)
+
+    def _autoclicker_capture_rebind(self, event) -> None:
+        new_key = _tk_keysym_to_hotkey_name(event.keysym)
+        if not new_key:
+            # A bare modifier tap (Shift/Ctrl/Alt/...) isn't a usable
+            # hotkey on its own — keep listening instead of canceling, so
+            # an accidental modifier press doesn't force clicking Rebind
+            # again.
+            return
+
+        self.root.unbind_all("<KeyPress>")
+        self._rebinding = False
+        self._autoclicker_rebind_btn.configure(text="Rebind", state="normal")
+
+        self.auto_clicker_key = new_key
+        self._autoclicker_hotkey_label.configure(text=f"Hotkey: {new_key}")
+        if self.hotkey_listener is not None:
+            self.hotkey_listener.auto_clicker_key = new_key.lower()
+        self._save_config_value("hotkeys", "auto_clicker_toggle", new_key.lower())
+
+    def _save_config_value(self, section: str, key: str, value) -> None:
+        """Persists one config.yaml value via a round-trip parse (preserves
+        every comment/blank-line/order in the file), same technique
+        self_tuning.py uses for its own auto-adjustments."""
+        try:
+            from ruamel.yaml import YAML
+            yaml_rt = YAML()
+            yaml_rt.preserve_quotes = True
+            yaml_rt.indent(mapping=2, sequence=4, offset=2)
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                doc = yaml_rt.load(f)
+            doc.setdefault(section, {})[key] = value
+            with open(self.config_path, "w", encoding="utf-8", newline="\n") as f:
+                yaml_rt.dump(doc, f)
+        except Exception:
+            pass  # rebind still works for this session even if the save fails
+
     # -- AFK banner (Toplevel, borderless, always-on-top) --------------------------
 
     def _build_banner(self) -> None:
@@ -537,15 +699,6 @@ class ControlPanel:
         navigator = self.towers_automation.navigator
         rx, ry, rw, rh = self.screen_region
         cx_screen = rw / 2
-        deadzone_px = rw * navigator.deadzone_fraction
-
-        # center reference line + deadzone boundaries (why it decides
-        # left/right/straight)
-        canvas.create_line(cx_screen, 0, cx_screen, rh, fill="#555555", dash=(4, 4))
-        canvas.create_line(cx_screen - deadzone_px, 0, cx_screen - deadzone_px, rh,
-                            fill=_TRACER_DEADZONE, dash=(2, 4))
-        canvas.create_line(cx_screen + deadzone_px, 0, cx_screen + deadzone_px, rh,
-                            fill=_TRACER_DEADZONE, dash=(2, 4))
 
         chosen = navigator.last_chosen_match
         for name, m in navigator.last_all_candidates:
@@ -568,6 +721,7 @@ class ControlPanel:
         story_on = self.story_running_event.is_set()
         towers_on = self.towers_running_event.is_set()
         pvp_on = self.pvp_running_event is not None and self.pvp_running_event.is_set()
+        autoclicker_on = self.auto_clicker_running_event is not None and self.auto_clicker_running_event.is_set()
 
         color = _ACCENT_RUNNING if story_on else _ACCENT_STOPPED
         self._story_status_label.configure(text="RUNNING" if story_on else "STOPPED", fg=color)
@@ -608,9 +762,21 @@ class ControlPanel:
             except queue.Empty:
                 pass
 
-        # The generic "AFK FARMING" banner is Story/Towers-only — PvP gets
-        # its own dedicated "AFK ELO FARMING" overlay below instead.
-        running = story_on or towers_on
+        autoclicker_color = _ACCENT_RUNNING if autoclicker_on else _ACCENT_STOPPED
+        self._autoclicker_indicator.configure(text="RUNNING" if autoclicker_on else "STOPPED", fg=autoclicker_color)
+        if self.auto_clicker is not None:
+            self._autoclicker_clicks_label.configure(text=str(self.auto_clicker.stats["clicks"]))
+        if self.auto_clicker_log_queue is not None:
+            try:
+                while True:
+                    line = self.auto_clicker_log_queue.get_nowait()
+                    self._append_log(self._autoclicker_log_text, line)
+            except queue.Empty:
+                pass
+
+        # The generic "AFK FARMING" banner is Story/Towers/Auto-Clicker —
+        # PvP gets its own dedicated "AFK ELO FARMING" overlay below instead.
+        running = story_on or towers_on or autoclicker_on
         # Don't fight with a hide_overlays_for_capture() in progress — the
         # capture Towers is taking right now needs these to stay hidden
         # until show_overlays_after_capture() explicitly restores them.

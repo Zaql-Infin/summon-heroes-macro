@@ -552,8 +552,28 @@ class DoorNavigator:
         this to notice a repeated failure pattern and adjust."""
         step_seconds = self.align_turn_seconds
         prev_direction = None
+        near_x = self.last_chosen_match.center[0] if self.last_chosen_match else None
         for attempt in range(self.align_max_attempts):
             frame = self._grab_frame()
+
+            # AI alignment's actual turn decision comes from judge_alignment
+            # below, not from this — this is purely so the GUI's tracer
+            # overlay tracks the real door position as the camera turns.
+            # Without it, last_chosen_match stays frozen at wherever
+            # detect_door() saw the door BEFORE alignment started, so the
+            # drawn tracer box stays fixed in screen-space while the camera
+            # rotates the world underneath it — looks exactly like "the box
+            # just moves with the camera instead of tracking the symbol"
+            # (reported live, 2026-09-08), which is real: it doesn't track
+            # anything during AI alignment, it's just stale. Cheap local
+            # template match, no API cost, same one _align_locally already
+            # uses every attempt.
+            relocated = self.locate_type(frame, door_type, near_x=near_x)
+            if relocated is not None:
+                self.last_chosen_match = relocated
+                self.last_all_candidates = [(door_type, relocated)]
+                near_x = relocated.center[0]
+
             judgment = self.ai_classifier.judge_alignment(frame, door_type)
             self.logger.info(
                 "AI alignment judgment for '%s': %s (attempt %d/%d, step %.3fs).",
@@ -605,6 +625,12 @@ class DoorNavigator:
         prev_offset = None
 
         for attempt in range(self.align_max_attempts):
+            # Keep the GUI's tracer overlay showing the real, current
+            # position too, not just whatever detect_door() saw before
+            # alignment started.
+            self.last_chosen_match = current
+            self.last_all_candidates = [(door_type, current)]
+
             offset = self._centering_offset(current, door_type)
             if abs(offset) <= deadzone:
                 return True
@@ -641,10 +667,28 @@ class DoorNavigator:
     def approach_and_enter(self, match: vision.Match) -> None:
         """Turns the CAMERA (arrow keys) to actually face the door dead
         center before walking — not a single fixed-duration strafe guess
-        committed to blindly. Steered by the AI (_align_with_ai) whenever
-        it's available, per instruction to have it drive as much of this
-        as it reliably can; falls back to local pixel-offset matching
-        (_align_locally) otherwise."""
+        committed to blindly. Always steered by local pixel-offset matching
+        (_align_locally), not the AI (_align_with_ai) — even when
+        door_detection.method is "ai_hybrid" (that setting still governs
+        DOOR-TYPE classification in detect_door(), just not alignment
+        steering).
+
+        This used to prefer _align_with_ai whenever available. Reverted
+        (2026-09-08) after live testing — with the GUI tracer now actually
+        tracking the door's real position during alignment (previously it
+        stayed frozen, a separate bug also fixed today), a captured
+        sequence showed the AI call "left" 10 times in a row while the
+        door visibly slid from left-of-center to almost fully off-screen
+        to the RIGHT — i.e. it overshot badly and never noticed, because a
+        single categorical word per attempt carries no magnitude and
+        apparently isn't reliably re-judging the CURRENT frame's true
+        offset each time. _align_locally doesn't have this failure mode:
+        it measures an actual pixel offset via template match every
+        attempt, so an overshoot flips the measured sign immediately and
+        the halving-step logic reacts to it, instead of politely
+        continuing to say "left" while the door sails past center. This
+        directly matches what was reported live: "it moves the camera off
+        target... instead of on the door.\""""
         self._ensure_game_focus()
 
         door_type = self.last_match_name
@@ -655,9 +699,6 @@ class DoorNavigator:
             # fed to self_tuner: there's no real "alignment attempt" here
             # to judge.
             self.logger.warning("approach_and_enter called with no known door type — skipping alignment.")
-        elif self.method == "ai_hybrid" and self.ai_classifier is not None and self.ai_classifier.enabled:
-            converged = self._align_with_ai(door_type)
-            self.self_tuner.record_alignment_result(converged)
         else:
             converged = self._align_locally(door_type, match)
             self.self_tuner.record_alignment_result(converged)

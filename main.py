@@ -80,7 +80,7 @@ def _relaunch_elevated_if_needed() -> None:
 _check_for_update_and_exit_if_updating()
 _relaunch_elevated_if_needed()
 
-from modules import vision, input_sim, hotkeys, logging_setup, gui, towers, story_campaign, pvp_spam, version
+from modules import vision, input_sim, hotkeys, logging_setup, gui, towers, story_campaign, pvp_spam, auto_clicker, version
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -102,6 +102,7 @@ class MacroApp:
         self.towers_running_event = threading.Event()
         self.campaign_running_event = threading.Event()
         self.pvp_running_event = threading.Event()
+        self.auto_clicker_running_event = threading.Event()
         self._shutdown_flag = threading.Event()
 
         self.towers_log_queue: "queue.Queue[str]" = queue.Queue()
@@ -128,6 +129,11 @@ class MacroApp:
             config, self.pvp_running_event, self.logger, log_callback=self.pvp_log_queue.put
         )
 
+        self.auto_clicker_log_queue: "queue.Queue[str]" = queue.Queue()
+        self.auto_clicker = auto_clicker.AutoClicker(
+            config, self.auto_clicker_running_event, self.logger, log_callback=self.auto_clicker_log_queue.put
+        )
+
         self.hotkey_listener = hotkeys.HotkeyListener(
             config,
             self.story_running_event,
@@ -135,6 +141,7 @@ class MacroApp:
             logger=self.logger,
             campaign_running_event=self.campaign_running_event,
             pvp_running_event=self.pvp_running_event,
+            auto_clicker_running_event=self.auto_clicker_running_event,
         )
 
         self.gui = gui.ControlPanel(
@@ -147,6 +154,11 @@ class MacroApp:
             pvp_running_event=self.pvp_running_event,
             pvp_log_queue=self.pvp_log_queue,
             pvp_spam=self.pvp_spam,
+            auto_clicker_running_event=self.auto_clicker_running_event,
+            auto_clicker_log_queue=self.auto_clicker_log_queue,
+            auto_clicker=self.auto_clicker,
+            hotkey_listener=self.hotkey_listener,
+            config_path="config.yaml",
         )
         # Wire up the hide/show-around-capture hooks now that the GUI exists.
         # Both TowersAutomation's own detection captures AND the navigator's
@@ -186,9 +198,10 @@ class MacroApp:
         threading.Thread(target=self.towers_automation.run, daemon=True, name="TowersLoop").start()
         threading.Thread(target=self.story_campaign.run, daemon=True, name="CampaignLoop").start()
         threading.Thread(target=self.pvp_spam.run, daemon=True, name="PvpSpamLoop").start()
+        threading.Thread(target=self.auto_clicker.run, daemon=True, name="AutoClickerLoop").start()
         self.logger.info(
             f"Macro ready (v{version.APP_VERSION}). Story: F6 start / F7 stop. Towers: F8 toggle. "
-            f"Campaign: B toggle. PvP: P toggle."
+            f"Campaign: B toggle. PvP: P toggle. Auto Clicker: {self.hotkey_listener.auto_clicker_key.upper()} toggle."
         )
 
         try:
@@ -204,9 +217,11 @@ class MacroApp:
         self.towers_running_event.clear()
         self.campaign_running_event.clear()
         self.pvp_running_event.clear()
+        self.auto_clicker_running_event.clear()
         self.towers_automation.stop()
         self.story_campaign.stop()
         self.pvp_spam.stop()
+        self.auto_clicker.stop()
         self.hotkey_listener.stop()
         self.logger.info("Macro stopped cleanly.")
 
