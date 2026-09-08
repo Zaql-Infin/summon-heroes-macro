@@ -183,7 +183,7 @@ class DoorNavigator:
 
         # Same "Floor: N" HUD region the GUI mirrors into its overlay —
         # reused here to confirm a room transition actually happened after
-        # walking through a door (see _read_floor_number).
+        # walking through a door (see _floor_region_crop).
         self.floor_region: list[int] | None = config.get("overlay", {}).get("floor_region")
 
         self.last_match_name: str | None = None
@@ -318,20 +318,32 @@ class DoorNavigator:
         bias_fraction = self.badge_center_offset.get(door_type, 0.0) if door_type else 0.0
         return raw_offset - bias_fraction * match.w
 
-    def _read_floor_number(self, frame) -> int | None:
-        """OCR-reads the "Floor: N" HUD text — used to confirm a room
+    def _floor_region_crop(self, frame):
+        """Crop of the "Floor: N" HUD text — used to confirm a room
         transition actually happened after walking through a door, rather
-        than just walking forward for a fixed guess and hoping. Returns
-        None on any OCR failure (missing Tesseract, garbled read) — callers
-        should treat that as "couldn't confirm," not an error."""
+        than just walking forward for a fixed guess and hoping.
+
+        Used to be OCR-read into an actual int (see git history), but live
+        testing (2026-09-08) found Tesseract simply cannot read this game's
+        bold outlined/bubble font AT ALL — every preprocessing variant
+        tried (upscaling, thresholding in both directions, digit-only
+        whitelist, every --psm mode) read "Floor: 24" as "BR", "NFloonzecmay",
+        or nothing. That silent, permanent failure was feeding
+        self_tuning.py a constant stream of "confirmation failed", which
+        kept inflating movement.walk_through_seconds toward its cap every
+        few doors for no real reason — chasing a signal that could never
+        succeed.
+
+        This region is a fixed 2D HUD element (not a 3D-world object), so
+        pixel-for-pixel it's provably identical frame-to-frame whenever the
+        number hasn't changed (confirmed live: 0.0 mean diff across a full
+        second on the same floor) — a plain pixel comparison (see
+        vision.mean_pixel_diff) confirms a real transition just as
+        reliably as reading the actual digits would, without needing OCR
+        to work on this font at all."""
         if not self.floor_region:
             return None
-        try:
-            text = vision.ocr_text(frame, region=self.floor_region)
-            digits = "".join(ch for ch in text if ch.isdigit())
-            return int(digits) if digits else None
-        except Exception:
-            return None
+        return vision.crop(frame, self.floor_region)
 
     def detect_door(self, frame) -> vision.Match | None:
         """Also records the chosen door's name in self.last_match_name (None
@@ -650,7 +662,7 @@ class DoorNavigator:
             converged = self._align_locally(door_type, match)
             self.self_tuner.record_alignment_result(converged)
 
-        floor_before = self._read_floor_number(self._grab_frame())
+        floor_crop_before = self._floor_region_crop(self._grab_frame())
 
         self.logger.info("Walking into door for %.1fs.", self.walk_through_seconds)
         input_sim.hold_key_for(self.forward_key, self.walk_through_seconds)
@@ -661,31 +673,24 @@ class DoorNavigator:
         if self.interact_key:
             input_sim.tap_key(self.interact_key)
 
-        # Keep walking (in short steps, re-checking the "Floor: N" HUD text
-        # each time) until the floor number actually increments — confirms
-        # the room transition really happened, not just "walked forward for
-        # a fixed guess and hoped" — then a bit further to reach the new
-        # platform's center where the floor number is painted on the
-        # ground. Capped by walk_to_center_max_seconds so a missed/garbled
-        # OCR read (or floor_region not configured) can't walk forever.
-        if floor_before is not None:
+        # Keep walking (in short steps, re-checking the "Floor: N" HUD crop
+        # each time) until it visibly changes — confirms the room
+        # transition really happened, not just "walked forward for a fixed
+        # guess and hoped" — then a bit further to reach the new platform's
+        # center where the floor number is painted on the ground. Capped
+        # by walk_to_center_max_seconds so a missing floor_region (or a
+        # transition that never renders a change, edge case) can't walk
+        # forever. Plain pixel diff, not OCR — see _floor_region_crop for
+        # why (Tesseract can't read this font at all, confirmed live).
+        if floor_crop_before is not None:
             walked = 0.0
             reached_new_floor = False
             while walked < self.walk_to_center_max_seconds:
                 input_sim.hold_key_for(self.forward_key, self.walk_to_center_step_seconds)
                 walked += self.walk_to_center_step_seconds
-                floor_now = self._read_floor_number(self._grab_frame())
-                # A real floor transition increments by a small amount
-                # (almost always +1) — a stray OCR misread can produce
-                # anything, so require a small, plausible, POSITIVE delta,
-                # not just "any different number." Seen live before this
-                # check existed: "floor 88 (was 32)", "floor 234 (was 33)",
-                # "floor 8 (was 82)" all got accepted as real transitions —
-                # pure OCR noise, not real floor changes, causing the walk
-                # to stop early in the wrong spot (an empty/wrong door).
-                delta = (floor_now - floor_before) if floor_now is not None else None
-                if delta is not None and 0 < delta <= 5:
-                    self.logger.info("Reached floor %d (was %d) — walking to platform center.", floor_now, floor_before)
+                floor_crop_now = self._floor_region_crop(self._grab_frame())
+                if vision.mean_pixel_diff(floor_crop_before, floor_crop_now) > 1.0:
+                    self.logger.info("Floor number changed — walking to platform center.")
                     reached_new_floor = True
                     break
 

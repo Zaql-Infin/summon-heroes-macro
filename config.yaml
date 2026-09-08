@@ -183,12 +183,20 @@ movement:
   # door, throwing alignment off-line before the halving logic gets a
   # chance to narrow it back in.
   align_turn_seconds: 0.05
-  align_max_attempts: 8
+  align_max_attempts: 10
   # Seconds to hold forward walking into the door once aligned, then a
   # single jump right after (not interleaved with the walk).
   # Reduced back from 4.0 — with alignment now correcting for badge-vs-door
   # centering (see badge_center_offset), it's actually pointed at the door
   # correctly, so 4.0s was carrying it too far past the doorway.
+  # Reset to 3.0 (2026-09-08) after self-tuning had inflated this to 4.5,
+  # right up against its 5.0 cap — that climb was a bug, not a real
+  # walking-distance problem: the floor-change confirmation it was
+  # "reacting to" was OCR-based and could never succeed against this
+  # game's bubble font (see navigation.py's _floor_region_crop), so every
+  # single door counted as a failure regardless of whether the walk
+  # itself was actually fine. Now that confirmation uses a pixel-diff
+  # check instead (which works), this should stay near its real baseline.
   walk_through_seconds: 3.0
   # After the door-walk + jump above, keeps walking in these increments,
   # checking the "Floor: N" HUD text (overlay.floor_region) each time,
