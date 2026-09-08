@@ -1,0 +1,11 @@
+names:
+  0: elite
+  1: chest
+  2: healing
+  3: mystery
+  4: merchant
+  5: combat
+  6: recruit
+path: C:\Users\zaqlw\lets try this real qucik\summon_heroes_macro\dataset
+train: images/train
+val: images/val

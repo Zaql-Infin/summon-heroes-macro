@@ -1,0 +1,353 @@
+# =============================================================================
+# Summon Heroes Macro — Configuration
+# Everything the macro needs lives here so you never have to touch the code.
+#
+# Two modes, see the GUI's Story / Towers tabs:
+#   Story   — [hotkeys.start / hotkeys.stop] just clicks teleport_button on a
+#             timer. Uses screen / teleport_button / overlay / logging below.
+#   Towers  — [hotkeys.towers_toggle] full door-detection automation. Also
+#             uses door_detection / movement / auto_jump / teleport_to_hero.
+# =============================================================================
+
+screen:
+  width: 2560
+  height: 1440
+  # Region of the screen that actually shows the game (x, y, w, h).
+  game_region: [0, 0, 2560, 1440]
+
+ai_vision:
+  # Used by door_detection.method: "ai_hybrid" — an actual vision-model
+  # call decides WHICH door type is on screen (semantic understanding, so
+  # it isn't fooled by per-floor biome reskins or stray visual effects the
+  # way raw pixel template matching was), before handing off to local
+  # matching for a precise position. Costs a small amount per call (an
+  # image + a one-word answer) and adds ~2-3s of network latency per
+  # detection — worth it for reliability, but real API usage, not free.
+  enabled: true
+  # Read from this environment variable (see .env in this folder — never
+  # commit that file or paste the key elsewhere).
+  api_key_env: "ANTHROPIC_API_KEY"
+  model: "claude-haiku-4-5-20251001"
+
+hotkeys:
+  start: "f6"           # Story: begin/resume clicking
+  stop: "f7"             # Story: stop clicking
+  towers_toggle: "f8"     # Towers: toggle enable/pause
+  campaign_toggle: "b"    # Story campaign: toggle enable/pause
+  pvp_toggle: "p"          # PvP spam-click: toggle enable/pause
+
+teleport_button:
+  # Preferred: template image match (recalibrate with tools/capture_template.py
+  # if the button ever moves or the UI changes). Shared by both modes.
+  template_path: "templates/teleport_button.png"
+  match_threshold: 0.7
+  # Fallback: fixed screen coordinate, used only if the template isn't found.
+  fallback_coordinate: [1553, 1364]
+  # Story only: how often to click, in seconds.
+  interval_seconds: 2.5
+
+overlay:
+  text: "AFK FARMING"
+  # Region of the screen showing the in-game "Floor: N" text (x, y, w, h) —
+  # mirrored live into the overlay, scaled up, right under the banner text.
+  # Recalibrate with tools/pick_coordinate.py-style eyeballing if the HUD
+  # ever moves; kept wide enough to fit a few extra digits as the floor
+  # number grows.
+  floor_region: [750, 98, 260, 65]
+  floor_scale: 1.3
+
+story_campaign:
+  # Runs the full Story campaign on loop: Rookie Island Stage 1 -> Start,
+  # then the game auto-progresses through every stage/island on its own
+  # until it can't go further. Confirmed live (2026-09-08): the actual
+  # "campaign complete" signal is a standalone "VICTORY!" results screen
+  # with a "Back To Lobby" button — NOT anything inside the Story menu
+  # (the original Stargazer-card theory was wrong). On detection: click
+  # Back To Lobby, walk forward into the portal, start over.
+  check_interval_seconds: 20.0
+  # How long to hold forward to walk into the lobby portal and reopen the
+  # Story menu after finishing a full campaign run.
+  portal_walk_seconds: 3.0
+
+pvp_spam:
+  # Spam-clicks the "Play Ranked" button (top-left of the PvP lobby screen)
+  # nonstop while toggled on — no detection, just click_coordinate on a
+  # fast fixed interval, over and over, until toggled off. Calibrated
+  # live against a 2560x1440 capture (2026-09-08); recalibrate for other
+  # resolutions the same way if it ever misses the button.
+  click_coordinate: [200, 293]
+  interval_seconds: 0.05
+  # Top-middle overlay shown only while PvP is running: big "AFK ELO
+  # FARMING" text, with the actual "N ELO" HUD text mirrored live
+  # underneath (same live-mirror technique as overlay.floor_region, just a
+  # different source region + position). elo_region is the on-screen crop
+  # of the "### ELO" text under the GOLD rank badge, calibrated live at
+  # 2560x1440 (2026-09-08) — recalibrate for other resolutions.
+  overlay_text: "AFK ELO FARMING"
+  # Retightened (2026-09-08) — the original region included a chunk of
+  # blank badge background to the left of the actual "N ELO" text, which
+  # made the magnified mirror look off-center. A little extra margin is
+  # kept on the right in case ELO ever reaches 4 digits.
+  elo_region: [185, 248, 150, 34]
+  elo_scale: 3.0
+
+# =============================================================================
+# Towers mode only, below this line.
+# =============================================================================
+
+teleport_to_hero:
+  # Runs on a fixed interval any time no door is on screen — i.e. whenever
+  # you're standing in the middle of an arena. Stops the moment a door is
+  # detected, resumes once back in a doorless arena.
+  # Disabled: kept interfering with alignment right before/during walking
+  # to an already-found door. The camera-sweep scan (scan_tick) still runs
+  # on its own to look around for doors even with this off.
+  enabled: false
+  interval_seconds: 2.5
+
+floor_cleared:
+  # A door can render in the background before the encounter is actually
+  # finished — Towers waits for this "Floor Cleared" banner before walking
+  # to a chosen door, not just detecting it.
+  #
+  # "ocr" reads the actual banner text (via Tesseract) instead of image
+  # correlation against a static template — the template method only
+  # confirmed 1 of 4 real clears (the banner fades/scales in, so a static
+  # crop only matches once it's near-fully-opaque) even after lowering its
+  # threshold. Reading the word directly has no threshold to tune and
+  # doesn't care about the fade animation. Requires Tesseract-OCR installed
+  # (winget install --id UB-Mannheim.TesseractOCR) + pytesseract (in
+  # requirements.txt). Set to "template" to fall back to the old method.
+  method: "ocr"
+  ocr_keyword: "CLEARED"
+  # Region [x, y, w, h] to OCR — null uses door_detection.search_region
+  # (the same "not in the HUD strips" band), which is plenty since the
+  # banner renders center-screen inside that band anyway.
+  ocr_region:
+  # Template method only (kept as a fallback option, see "method" above).
+  template_path: "templates/floor_cleared.png"
+  match_threshold: 0.55
+  # Give up waiting after this long and walk anyway, so a floor that never
+  # shows this banner (or a missed capture) can't stall Towers forever.
+  # Confirmed live: the door archways are visible as background scenery for
+  # the WHOLE fight, not just once it's over, so this wait almost always
+  # runs to the full timeout before proceeding anyway regardless of the
+  # value here — walking in "early" isn't new behavior, just how soon it
+  # happens. Lowered from 12s since a longer wait only delays the same
+  # eventual outcome, it doesn't make the walk-in any safer.
+  wait_timeout_seconds: 4.0
+  # Teleporting moves the camera. Wait this long after clicking it before
+  # trusting any door detection, so we're not reading door positions from a
+  # frame taken mid-camera-transition (which caused wrong turns).
+  camera_settle_seconds: 0.8
+
+# WASD moves the character (forward/back/strafe-left/strafe-right) and is
+# the PRIMARY way to approach a visible door — strafing curves the walking
+# path toward it without needing to actually reorient the camera. Arrow-key
+# camera turning is now a FALLBACK, used only in scan_tick while searching,
+# to look around for a door that isn't currently in view at all. Up/Down
+# arrows are never used for forward/back — they drift camera pitch downward
+# with repeated use (confirmed via recorded clip).
+movement:
+  keys:
+    forward: "w"
+    back: "s"
+    left: "a"
+    right: "d"
+  # Fallback-only camera turn, used by scan_tick when no door is visible at
+  # all and the view needs to actually reorient to find one.
+  camera_turn_keys:
+    left: "left"
+    right: "right"
+  # How scan_tick actually turns the camera: "mouse" holds right-click and
+  # drags the cursor (Roblox's native camera control — the arrow-key
+  # binding above was less reliable), or "keys" to use camera_turn_keys.
+  camera_turn_method: "keys"
+  camera_drag_pixels: 400
+  jump_key: "space"
+  # Doors here are opened just by walking into them — no interact key needed.
+  interact_key:
+  # Unused by approach_and_enter as of the camera-turn alignment rewrite
+  # below (kept in case a future strafe-based approach ever comes back).
+  turn_seconds: 0.4
+  # approach_and_enter now actually turns the camera to face the door
+  # before walking, instead of one fixed-duration strafe guess committed to
+  # blindly (that could walk confidently off the map if the guess was
+  # wrong). Each attempt: tap the camera-turn key for align_turn_seconds,
+  # then re-check alignment with a cheap local match (no AI call) — repeat
+  # until centered or align_max_attempts runs out, then walk straight.
+  # Starting turn-tap duration for each alignment attempt — adaptively
+  # halved on overshoot (see approach_and_enter), so this only needs to be
+  # a reasonable starting point, not perfectly tuned. Lowered from 0.1 —
+  # confirmed live that even a 0.1s tap turns the camera well past the
+  # door, throwing alignment off-line before the halving logic gets a
+  # chance to narrow it back in.
+  align_turn_seconds: 0.05
+  align_max_attempts: 8
+  # Seconds to hold forward walking into the door once aligned, then a
+  # single jump right after (not interleaved with the walk).
+  # Reduced back from 4.0 — with alignment now correcting for badge-vs-door
+  # centering (see badge_center_offset), it's actually pointed at the door
+  # correctly, so 4.0s was carrying it too far past the doorway.
+  walk_through_seconds: 3.0
+  # After the door-walk + jump above, keeps walking in these increments,
+  # checking the "Floor: N" HUD text (overlay.floor_region) each time,
+  # until it actually increments — confirms the new platform was really
+  # reached, not just "walked forward for a fixed guess" — then walks a bit
+  # further to reach the platform's center (where the floor number is
+  # painted on the ground). Capped by max_seconds so a missed OCR read
+  # can't walk forever/off the map.
+  # Lowered from 8.0/1.5 — the floor-number OCR confirmation isn't
+  # reliably succeeding right now (0 of 3 in a full test run), so this was
+  # walking the FULL max every single time: 4.0s door-walk + 8.0s of this
+  # = 12 continuous seconds of blind forward walking on every single door,
+  # not just a rare worst case. Capped much lower so a failed confirmation
+  # costs little; still stops early on the rare case it does confirm.
+  walk_to_center_step_seconds: 0.5
+  walk_to_center_max_seconds: 2.0
+  walk_to_center_extra_seconds: 1.0
+  # While waiting for a door (teleporting-to-hero, no door in view yet),
+  # holds forward + camera-turn-right together for this long each tick,
+  # right after each teleport — a slow partial camera sweep so it eventually
+  # sees every door in the room. Deliberately bounded to once per teleport
+  # (not continuous), so a long boss fight doesn't turn into wandering in
+  # circles the whole time.
+  scan_tick_seconds: 0.3
+
+auto_jump:
+  # Jumping happens once, right after walking through a door.
+  enabled: true
+  hold_seconds: 0.05
+
+door_detection:
+  # "ai_hybrid" — an AI vision call decides which door type is present
+  # (see ai_vision section below; needs an API key), then local template
+  # matching for just that confirmed type finds its precise location.
+  # Falls back to "template" automatically if the AI classifier can't
+  # initialize (no key, package missing, etc).
+  # "template" — pure local pixel-correlation matching, no API needed.
+  # "yolo" — a trained object detector — see tools/label_doors.py +
+  # tools/train_door_detector.py to build one; falls back to "template"
+  # automatically if yolo_model_path doesn't exist yet.
+  # "color" — rough fallback.
+  method: "ai_hybrid"
+  # yolo method only — path to weights trained by train_door_detector.py,
+  # and the confidence floor for a raw detection (per-type overrides below
+  # under "thresholds" still apply on top of this).
+  yolo_model_path: "models/door_detector.pt"
+  yolo_confidence: 0.5
+  # Each room type gets a name + its gate-icon template. Every visible gate
+  # is detected simultaneously (not just the first match) and the one whose
+  # name ranks highest in priority below is the one we walk to.
+  templates:
+    # "lunarium" is DISABLED — its template isn't specific enough and has
+    # now false-matched three unrelated things at genuine-looking confidence
+    # (0.79-0.83, indistinguishable from real matches by threshold alone): a
+    # lighthouse, the Combat icon itself, and a spinning satellite dish.
+    # Since it's top priority, each bad match hijacked navigation away from
+    # a real, correctly-visible door. Needs a much tighter recapture before
+    # re-enabling — flag me next time it's on screen.
+    # - name: "lunarium"
+    #   path: "templates/door_archway_lunarium.png"
+    - name: "elite"
+      path: "templates/door_archway_elite.png"
+    - name: "chest"
+      path: "templates/door_archway_chest.png"
+    - name: "healing"
+      path: "templates/door_archway_healing.png"     # not captured yet
+    - name: "mystery"
+      path: "templates/door_archway_mystery.png"
+    - name: "merchant"
+      path: "templates/door_archway_merchant.png"
+    - name: "combat"
+      path: "templates/door_archway_combat.png"
+    # "recruit" intentionally excluded — not a room type you want the macro
+    # to ever pick (its icon file is still on disk at
+    # templates/door_archway_recruit.png if this ever changes).
+  # Highest-priority room type first. Any detected door whose name isn't in
+  # this list falls to the back (lowest priority), so it's safe to leave new
+  # types unranked until you decide where they belong. combat/recruit
+  # weren't given a rank, so they're lowest priority — move them into this
+  # list explicitly if that's wrong.
+  priority:
+    # "lunarium" removed from ranking too while its template is disabled
+    # above — see that comment. Re-add here once a better template exists.
+    - "elite"
+    - "chest"
+    - "healing"
+    - "mystery"
+    - "combat"
+    - "merchant"
+  # TM_CCOEFF_NORMED score threshold (0-1). Normalized correlation already
+  # tolerates brightness/contrast shifts between floors reasonably well, and
+  # matching is scanned across multiple scales (see
+  # vision.find_template_multiscale) to handle these doors being 3D-world
+  # objects whose on-screen size changes with camera distance.
+  # NOTE: priority ranking picks the highest-ranked door among everything
+  # that clears this threshold, regardless of score — so a low-confidence
+  # false-positive match for a high-priority type can beat a strong, real
+  # match for a lower-priority type. Keep this high enough that anything
+  # clearing it is trustworthy.
+  match_threshold: 0.7
+  # Per-type overrides.
+  #
+  # All 5 templates were recaptured (2026-09-07) as tight crops of just the
+  # icon badge (the pink/gold/white emblem), not the surrounding stone
+  # archway — found via a live floor that used a different biome reskin
+  # (different stone color/texture) where NONE of the old, frame-inclusive
+  # templates matched at all despite two doors being clearly visible and
+  # unobstructed. The stone frame varies by biome; the badge glyph doesn't,
+  # so cropping it out fixed matching across themes. Old templates kept at
+  # templates/_old_backup/ for reference.
+  #
+  # This did surface a new, narrower collision: the new "combat" and
+  # "merchant" badges (both roughly window-shaped emblems) scored within
+  # 0.03 of each other on the SAME real Combat door in testing (0.736 vs
+  # 0.709) — close enough that a lenient merchant threshold would let it
+  # false-claim an actual Combat door out from under combat's own (lowest-
+  # priority, so safe-to-miss) match. Merchant needs a real margin above
+  # that observed 0.709 false read; combat's own genuine match (0.736)
+  # only needs to clear the ordinary global threshold.
+  thresholds:
+    mystery: 0.75
+    merchant: 0.8
+  # Correction for badge icons that aren't centered within the door
+  # archway they were cropped from (measured from the original capture
+  # crop coordinates, as a fraction of the door's width) — alignment was
+  # centering the badge, not the door, which walked into the door's SIDE
+  # rather than the middle. Positive = badge sits right of the door's true
+  # center, negative = left. elite/chest were negligible (<1%) and are
+  # left out; mystery's "?" was the big one at ~17%.
+  badge_center_offset:
+    mystery: -0.1745
+    combat: 0.0447
+    merchant: 0.0213
+  # detect_door() measured at ~8.3s/call at full resolution — 8 templates x
+  # 7 scales of matchTemplate on a 2560x1440 frame. Matching against a
+  # downscaled frame + proportionally downscaled templates instead (this
+  # factor) finds the exact same matches on far fewer pixels, since the
+  # multi-scale search is relative — shrinking both together doesn't change
+  # what's findable. Lower = faster but risks losing detail on small icons;
+  # 0.45 was chosen to keep icons legible while cutting runtime drastically.
+  detection_scale: 0.45
+  # Doors never actually appear in the top HUD strip (settings/chat icons,
+  # y<50) or the bottom hero-portrait/AUTO-timer/teleport-button row
+  # (y>900) in any screenshot seen so far — false positives keep landing
+  # there instead (a "combat" match was found sitting on the hero portraits
+  # once). Restricting the search to this vertical band [x, y, w, h]
+  # eliminates that whole category of false positive at once. Set to null
+  # to search the full frame again if this ever clips a real door.
+  search_region: [0, 50, 2560, 850]
+  # Color-based fallback (HSV bounds) for the glowing archway portals, only
+  # used when method == "color" or when template matching finds nothing.
+  color_fallback:
+    enabled: false
+    hsv_lower: [85, 40, 180]
+    hsv_upper: [110, 120, 255]
+    min_contour_area: 2500
+
+logging:
+  log_dir: "logs"
+  file_name: "macro.log"
+  max_bytes: 2000000
+  backup_count: 3

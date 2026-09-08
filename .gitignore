@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+logs/
+debug/
+dataset/raw/
+dataset/images/
+dataset/labels/
+runs/
+models/
+build/
+dist/
+*.spec
