@@ -80,7 +80,7 @@ def _relaunch_elevated_if_needed() -> None:
 _check_for_update_and_exit_if_updating()
 _relaunch_elevated_if_needed()
 
-from modules import vision, input_sim, hotkeys, logging_setup, gui, towers, story_campaign, pvp_spam, auto_clicker, version
+from modules import vision, input_sim, hotkeys, logging_setup, web_gui, towers, story_campaign, pvp_spam, auto_clicker, version
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -144,7 +144,7 @@ class MacroApp:
             auto_clicker_running_event=self.auto_clicker_running_event,
         )
 
-        self.gui = gui.ControlPanel(
+        self.gui = web_gui.WebControlPanel(
             self.story_running_event,
             self.towers_running_event,
             config,

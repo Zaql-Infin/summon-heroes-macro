@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Summon Heroes Macro</title>
+<style>
+  :root {
+    --bg: #150a1f;
+    --panel: rgba(42, 22, 64, 0.55);
+    --panel-solid: #2a1640;
+    --fg: #f2e9ff;
+    --muted: #b199d1;
+    --accent-run: #3ddc72;
+    --accent-stop: #ff5c8a;
+    --accent-pause: #ffb347;
+    --purple: #a259ff;
+    --purple-bright: #c58bff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    font-family: "Segoe UI", sans-serif;
+    color: var(--fg);
+    background: var(--bg) no-repeat center center;
+    background-size: cover;
+  }
+  body.has-image::before {
+    content: "";
+    position: fixed; inset: 0;
+    background: inherit;
+    filter: brightness(0.6);
+    z-index: -1;
+  }
+  #shell { display: flex; flex-direction: column; height: 100%; padding: 16px 18px; }
+
+  #header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  #mascot { width: 56px; height: 68px; flex-shrink: 0; }
+  #title-col { flex: 1; min-width: 0; }
+  #title-col h1 {
+    margin: 0; font-size: 21px; font-family: "Segoe Print", "Segoe UI", sans-serif;
+    color: var(--purple-bright); font-weight: 700;
+  }
+  #title-col p { margin: 0; font-size: 11px; color: var(--muted); }
+  .header-tools { display: flex; align-items: center; gap: 8px; }
+  .swatch {
+    width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--purple);
+    padding: 0; cursor: pointer; background: none; overflow: hidden;
+  }
+  .swatch input[type=color] { width: 40px; height: 40px; border: none; margin: -8px; cursor: pointer; }
+  .tool-btn {
+    background: var(--panel-solid); border: 1px solid var(--purple); color: var(--fg);
+    border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .tool-btn:hover { background: var(--purple); }
+
+  #tabbar { display: flex; gap: 4px; margin-bottom: 10px; }
+  .tab-btn {
+    flex: 1; padding: 8px 4px; border: none; border-radius: 8px; cursor: pointer;
+    background: rgba(28, 14, 43, 0.6); color: var(--muted); font-weight: 700; font-size: 12px;
+  }
+  .tab-btn.active { background: var(--purple); color: white; }
+
+  #content {
+    flex: 1; overflow-y: auto; background: var(--panel);
+    backdrop-filter: blur(10px); border-radius: 14px; border: 1px solid rgba(255,255,255,0.12);
+    padding: 16px; display: flex; flex-direction: column;
+  }
+  .tab-pane { display: none; flex-direction: column; flex: 1; min-height: 0; }
+  .tab-pane.active { display: flex; }
+
+  .status-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 6px 0 14px; }
+  .status-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent-stop); }
+  .status-dot.on { background: var(--accent-run); }
+  .status-text { font-weight: 700; font-size: 15px; color: var(--accent-stop); text-align: center; }
+  .status-text.on { color: var(--accent-run); }
+
+  .btn-row { display: flex; gap: 8px; justify-content: center; margin-bottom: 10px; flex-wrap: wrap; }
+  button.action {
+    border: none; border-radius: 10px; padding: 10px 18px; font-weight: 700; cursor: pointer;
+    font-size: 13px; color: #0a2e17;
+  }
+  button.action.run { background: var(--accent-run); }
+  button.action.stop { background: var(--accent-stop); color: #3a0a0a; }
+  button.action.pause { background: var(--accent-pause); color: #3a2600; }
+  button.action:hover { filter: brightness(1.1); }
+
+  .hint { text-align: center; font-size: 11px; color: var(--muted); margin: 2px 0; }
+
+  .rebind-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 6px 0; }
+  .rebind-btn {
+    background: var(--panel-solid); color: var(--fg); border: none; border-radius: 6px;
+    padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer;
+  }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+  .stat-cell {
+    background: rgba(58, 33, 88, 0.65); border-radius: 8px; padding: 8px 4px; text-align: center;
+  }
+  .stat-cell .val { font-size: 18px; font-weight: 700; }
+  .stat-cell .cap { font-size: 10px; color: var(--muted); }
+
+  .click-cell {
+    background: rgba(58, 33, 88, 0.65); border-radius: 8px; padding: 8px 4px; text-align: center;
+    margin: 10px 0;
+  }
+  .click-cell .val { font-size: 18px; font-weight: 700; }
+  .click-cell .cap { font-size: 10px; color: var(--muted); }
+
+  .log-label { font-size: 11px; font-weight: 700; color: var(--muted); margin: 6px 0 4px; }
+  .log-box {
+    flex: 1; min-height: 100px; background: rgba(10, 6, 16, 0.75); border-radius: 8px;
+    font-family: Consolas, monospace; font-size: 11px; color: #c8c8c8; padding: 8px;
+    overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="header">
+    <svg id="mascot" viewBox="0 0 60 76">
+      <ellipse cx="11" cy="42" rx="9" ry="26" fill="#2fe0c9" stroke="#1aa392"/>
+      <ellipse cx="49" cy="42" rx="9" ry="26" fill="#2fe0c9" stroke="#1aa392"/>
+      <rect x="18" y="50" width="24" height="24" rx="6" fill="#241238"/>
+      <ellipse cx="30" cy="52" rx="14" ry="6" fill="#241238"/>
+      <line x1="20" y1="56" x2="40" y2="56" stroke="#a259ff" stroke-width="2"/>
+      <ellipse cx="30" cy="24" rx="18" ry="18" fill="#ffe0c2"/>
+      <path d="M10 18 A20 16 0 0 1 50 18 L50 18 A20 32 0 0 0 10 18 Z" fill="#2fe0c9"/>
+      <ellipse cx="14" cy="21" rx="5" ry="5" fill="#2fe0c9"/>
+      <ellipse cx="46" cy="21" rx="5" ry="5" fill="#2fe0c9"/>
+      <ellipse cx="22" cy="24.5" rx="2" ry="2.5" fill="#241238"/>
+      <ellipse cx="38" cy="24.5" rx="2" ry="2.5" fill="#241238"/>
+      <ellipse cx="20.5" cy="31" rx="2.5" ry="2" fill="#ff9fc2"/>
+      <ellipse cx="39.5" cy="31" rx="2.5" ry="2" fill="#ff9fc2"/>
+    </svg>
+    <div id="title-col">
+      <h1>Summon Heroes</h1>
+      <p>AFK Automation</p>
+    </div>
+    <div class="header-tools">
+      <button class="swatch" id="bg-swatch" title="Background color">
+        <input type="color" id="bg-color-input" value="#150a1f">
+      </button>
+      <button class="tool-btn" id="bg-image-btn" title="Custom background image">🖼️</button>
+    </div>
+  </div>
+
+  <div id="tabbar">
+    <button class="tab-btn active" data-tab="story">Story</button>
+    <button class="tab-btn" data-tab="towers">Towers</button>
+    <button class="tab-btn" data-tab="pvp">PvP</button>
+    <button class="tab-btn" data-tab="autoclicker">Auto Clicker</button>
+  </div>
+
+  <div id="content">
+    <!-- Story -->
+    <div class="tab-pane active" id="tab-story">
+      <div class="status-row"><div class="status-dot" id="story-dot"></div><div class="status-text" id="story-status">STOPPED</div></div>
+      <div class="btn-row">
+        <button class="action run" onclick="api.start_story()">▶ Start</button>
+        <button class="action stop" onclick="api.stop_story()">■ Stop</button>
+      </div>
+      <div class="hint" id="story-hotkey">Hotkeys: F6 start · F7 stop</div>
+      <div class="hint" id="story-desc">Clicks teleport-to-hero every 2.5s while running.</div>
+    </div>
+
+    <!-- Towers -->
+    <div class="tab-pane" id="tab-towers">
+      <div class="status-text" id="towers-status" style="margin:6px 0 14px;">AUTOMATION PAUSED</div>
+      <div class="btn-row">
+        <button class="action run" onclick="api.start_towers()">▶ Start / Resume</button>
+        <button class="action pause" onclick="api.pause_towers()">⏸ Pause</button>
+        <button class="action stop" onclick="api.estop_towers()">⛔ Emergency Stop</button>
+      </div>
+      <div class="hint" id="towers-hotkey">Hotkey: F8 = toggle enable/pause</div>
+      <div class="stat-grid">
+        <div class="stat-cell"><div class="val" id="stat-runtime">00:00</div><div class="cap">Runtime</div></div>
+        <div class="stat-cell"><div class="val" id="stat-doors">0</div><div class="cap">Doors Detected</div></div>
+        <div class="stat-cell"><div class="val" id="stat-movements">0</div><div class="cap">Movements</div></div>
+        <div class="stat-cell"><div class="val" id="stat-teleports">0</div><div class="cap">Teleports</div></div>
+        <div class="stat-cell"><div class="val" id="stat-recoveries">0</div><div class="cap">Recovery Events</div></div>
+      </div>
+      <div class="log-label">Activity Log</div>
+      <div class="log-box" id="towers-log"></div>
+    </div>
+
+    <!-- PvP -->
+    <div class="tab-pane" id="tab-pvp">
+      <div class="status-row"><div class="status-dot" id="pvp-dot"></div><div class="status-text" id="pvp-status">STOPPED</div></div>
+      <div class="btn-row">
+        <button class="action run" onclick="api.start_pvp()">▶ Start</button>
+        <button class="action stop" onclick="api.stop_pvp()">■ Stop</button>
+      </div>
+      <div class="hint" id="pvp-hotkey">Hotkey: P = toggle</div>
+      <div class="hint">Spam-clicks the Play Ranked button nonstop while running.</div>
+      <div class="click-cell"><div class="val" id="pvp-clicks">0</div><div class="cap">Clicks</div></div>
+      <div class="log-label">Activity Log</div>
+      <div class="log-box" id="pvp-log"></div>
+    </div>
+
+    <!-- Auto Clicker -->
+    <div class="tab-pane" id="tab-autoclicker">
+      <div class="status-row"><div class="status-dot" id="ac-dot"></div><div class="status-text" id="ac-status">STOPPED</div></div>
+      <div class="btn-row">
+        <button class="action run" onclick="api.start_autoclicker()">▶ Start</button>
+        <button class="action stop" onclick="api.stop_autoclicker()">■ Stop</button>
+      </div>
+      <div class="rebind-row">
+        <span class="hint" id="ac-hotkey" style="margin:0;">Hotkey: C</span>
+        <button class="rebind-btn" id="ac-rebind-btn" onclick="startRebind()">Rebind</button>
+      </div>
+      <div class="hint">Clicks at the current cursor position nonstop while running — move the mouse where you want it clicking.</div>
+      <div class="click-cell"><div class="val" id="ac-clicks">0</div><div class="cap">Clicks</div></div>
+      <div class="log-label">Activity Log</div>
+      <div class="log-box" id="ac-log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let api = null;
+  let rebinding = false;
+
+  window.addEventListener("pywebviewready", () => {
+    api = window.pywebview.api;
+    init();
+  });
+
+  function init() {
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => showTab(btn.dataset.tab));
+    });
+    document.getElementById("bg-color-input").addEventListener("input", (e) => {
+      applyBgColor(e.target.value);
+    });
+    document.getElementById("bg-color-input").addEventListener("change", (e) => {
+      api.set_background_color(e.target.value);
+    });
+    document.getElementById("bg-image-btn").addEventListener("click", async () => {
+      const dataUri = await api.pick_background_image();
+      if (dataUri) applyBgImage(dataUri);
+    });
+
+    api.get_init_state().then(state => {
+      if (state.bg_color) applyBgColor(state.bg_color);
+      if (state.bg_image) applyBgImage(state.bg_image);
+      if (state.hotkeys) applyHotkeys(state.hotkeys);
+    });
+
+    setInterval(poll, 300);
+  }
+
+  function applyBgColor(hex) {
+    document.documentElement.style.setProperty("--bg", hex);
+    document.body.style.background = hex;
+    document.body.classList.remove("has-image");
+  }
+
+  function applyBgImage(dataUri) {
+    document.body.style.background = `url("${dataUri}") no-repeat center center`;
+    document.body.style.backgroundSize = "cover";
+    document.body.classList.add("has-image");
+  }
+
+  function applyHotkeys(hk) {
+    document.getElementById("story-hotkey").textContent = `Hotkeys: ${hk.start} start · ${hk.stop} stop`;
+    document.getElementById("towers-hotkey").textContent = `Hotkey: ${hk.towers} = toggle enable/pause`;
+    document.getElementById("pvp-hotkey").textContent = `Hotkey: ${hk.pvp} = toggle`;
+    document.getElementById("ac-hotkey").textContent = `Hotkey: ${hk.autoclicker}`;
+  }
+
+  function showTab(name) {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+    document.querySelectorAll(".tab-pane").forEach(p => p.classList.toggle("active", p.id === "tab-" + name));
+  }
+
+  function appendLog(elId, lines) {
+    if (!lines || !lines.length) return;
+    const el = document.getElementById(elId);
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+    el.textContent += lines.join("\n") + "\n";
+    if (atBottom) el.scrollTop = el.scrollHeight;
+  }
+
+  function startRebind() {
+    if (rebinding) return;
+    rebinding = true;
+    const btn = document.getElementById("ac-rebind-btn");
+    const label = document.getElementById("ac-hotkey");
+    btn.textContent = "...";
+    label.textContent = "Press any key…";
+    const handler = (e) => {
+      e.preventDefault();
+      const ignored = ["Shift", "Control", "Alt", "Meta", "CapsLock", "NumLock", "ScrollLock"];
+      if (ignored.includes(e.key)) return;
+      document.removeEventListener("keydown", handler, true);
+      rebinding = false;
+      btn.textContent = "Rebind";
+      api.rebind_autoclicker(e.key).then(newKey => {
+        label.textContent = "Hotkey: " + newKey;
+      });
+    };
+    document.addEventListener("keydown", handler, true);
+  }
+
+  function fmtTime(sec) {
+    sec = Math.floor(sec || 0);
+    const m = String(Math.floor(sec / 60)).padStart(2, "0");
+    const s = String(sec % 60).padStart(2, "0");
+    return `${m}:${s}`;
+  }
+
+  function poll() {
+    if (!api) return;
+    api.get_state().then(s => {
+      // Story
+      document.getElementById("story-dot").classList.toggle("on", s.story_on);
+      const storyStatus = document.getElementById("story-status");
+      storyStatus.textContent = s.story_on ? "RUNNING" : "STOPPED";
+      storyStatus.classList.toggle("on", s.story_on);
+
+      // Towers
+      document.getElementById("towers-status").textContent = s.towers_on ? "AUTOMATION ENABLED" : "AUTOMATION PAUSED";
+      document.getElementById("towers-status").style.color = s.towers_on ? "var(--accent-run)" : "var(--accent-stop)";
+      document.getElementById("stat-runtime").textContent = fmtTime(s.towers_stats.runtime);
+      document.getElementById("stat-doors").textContent = s.towers_stats.doors_detected;
+      document.getElementById("stat-movements").textContent = s.towers_stats.movements;
+      document.getElementById("stat-teleports").textContent = s.towers_stats.teleports;
+      document.getElementById("stat-recoveries").textContent = s.towers_stats.recoveries;
+      appendLog("towers-log", s.towers_log);
+
+      // PvP
+      document.getElementById("pvp-dot").classList.toggle("on", s.pvp_on);
+      const pvpStatus = document.getElementById("pvp-status");
+      pvpStatus.textContent = s.pvp_on ? "RUNNING" : "STOPPED";
+      pvpStatus.classList.toggle("on", s.pvp_on);
+      document.getElementById("pvp-clicks").textContent = s.pvp_clicks;
+      appendLog("pvp-log", s.pvp_log);
+
+      // Auto Clicker
+      document.getElementById("ac-dot").classList.toggle("on", s.autoclicker_on);
+      const acStatus = document.getElementById("ac-status");
+      acStatus.textContent = s.autoclicker_on ? "RUNNING" : "STOPPED";
+      acStatus.classList.toggle("on", s.autoclicker_on);
+      document.getElementById("ac-clicks").textContent = s.autoclicker_clicks;
+      appendLog("ac-log", s.autoclicker_log);
+    });
+  }
+</script>
+</body>
+</html>

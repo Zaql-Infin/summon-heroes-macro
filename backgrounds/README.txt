@@ -1,15 +1,17 @@
 Custom background images
 =========================
 
-Drop an image file in this folder named "background" (any common
-extension: .png, .jpg, .jpeg, .bmp) and restart the macro.
+Easiest way: click the 🖼️ button in the control panel's header and pick
+an image — it's copied here automatically and applied immediately, no
+restart needed.
+
+Manual way: drop an image file in this folder named "background" (any
+common extension: .png, .jpg, .jpeg, .bmp) and restart the macro.
 
 What it does:
-- Shows your image as a banner across the top of the control panel,
-  replacing the default mascot.
-- Auto-picks an accent color from the image and re-tints the rest of the
-  panel to match (same effect as using the 🎨 color picker, just derived
-  from your picture instead of chosen by hand).
+- Becomes the actual window background — the control panel's glass-style
+  panel shows it through a blurred backdrop effect, not just a flat
+  color.
 
 Remove the image (or the whole file) and restart to go back to the
 default look.

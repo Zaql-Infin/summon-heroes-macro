@@ -18,7 +18,7 @@ screen:
 gui:
   # Control panel background color — click the 🎨 swatch in the header to
   # change it live with a color picker; it's saved back here automatically.
-  background_color: "#150a1f"
+  background_color: "#150f1a"
   # Whole-window "see-through" transparency (Windows compositor-level, via
   # Tk's -alpha attribute) — 1.0 is fully opaque, lower is more see-through.
   # Applies to the whole window (buttons/text included), not just the

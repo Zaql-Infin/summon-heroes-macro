@@ -11,3 +11,4 @@ ultralytics>=8.4.0
 anthropic>=1.4.0
 python-dotenv>=1.2.0
 ruamel.yaml>=0.19.0
+pywebview>=6.0
