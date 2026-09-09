@@ -77,6 +77,10 @@ class DoorNavigator:
         # direction to walk that way — first-person keeps screen-center
         # aligned with facing direction, unlike a free third-person camera.
         self.click_to_move_button = mv.get("click_to_move_button", "right")
+        # User-confirmed 2026-09-09: right-click-to-move accepts a click
+        # directly on the door itself, no ground-offset guess needed. Set to
+        # false to go back to the computed-ground-point approach below.
+        self.click_to_move_click_on_door = mv.get("click_to_move_click_on_door", True)
         self.click_to_move_first_person = mv.get("click_to_move_first_person", True)
         self.click_to_move_zoom_in_clicks = mv.get("click_to_move_zoom_in_clicks", 15)
         self._first_person_set = False
@@ -747,10 +751,16 @@ class DoorNavigator:
         if not door_type:
             self.logger.warning("approach_and_enter called with no known door type — clicking last-known position anyway.")
         cx, cy = match.center
-        ground_y = cy + match.h * self.click_to_move_ground_offset_fraction
-        ground_y = max(ground_y, self.frame_h * self.click_to_move_ground_min_fraction)
-        ground_y = min(ground_y, self.frame_h * 0.6)
-        target = (int(cx), int(ground_y))
+        if self.click_to_move_click_on_door:
+            # User-confirmed 2026-09-09: right-click-to-move accepts a click
+            # directly on the door itself — no need to guess an offset
+            # ground point below it.
+            target = (int(cx), int(cy))
+        else:
+            ground_y = cy + match.h * self.click_to_move_ground_offset_fraction
+            ground_y = max(ground_y, self.frame_h * self.click_to_move_ground_min_fraction)
+            ground_y = min(ground_y, self.frame_h * 0.6)
+            target = (int(cx), int(ground_y))
         self.logger.info("Click-to-move (%s): walking to '%s' at %s.", self.click_to_move_button, door_type, target)
         input_sim.click_at(*target, button=self.click_to_move_button)
         time.sleep(self.click_to_move_arrival_wait_seconds)
