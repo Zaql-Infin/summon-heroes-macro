@@ -35,6 +35,7 @@ including navigation.py's own focus-guarantee click.
 from __future__ import annotations
 
 import ctypes
+import os
 import queue
 import threading
 import time
@@ -215,6 +216,19 @@ class ControlPanel:
         gui_cfg = config.get("gui", {})
         self.bg_color = gui_cfg.get("background_color", _BG)
 
+        # Custom background image (see backgrounds/README.txt) — if present,
+        # overrides bg_color with a color auto-derived from the image, and
+        # replaces the header mascot with a banner crop of the image itself.
+        # An explicit background_color set via the 🎨 picker AFTER this
+        # still wins for future launches (it overwrites this derived value
+        # in config.yaml the next time it's used), same as any other config
+        # value — this is just what happens on a plain, un-touched startup.
+        self._custom_bg_path = self._find_custom_background_path()
+        if self._custom_bg_path:
+            tint = self._compute_image_tint(self._custom_bg_path)
+            if tint:
+                self.bg_color = tint
+
         self._sct = mss.mss()
         self._banner_visible = False
         self._tracer_visible = False
@@ -228,6 +242,15 @@ class ControlPanel:
         self.root.configure(bg=self.bg_color)
         self.root.resizable(False, False)
         self.root.attributes("-topmost", True)
+        # Whole-window "see-through" effect — Tk's native -alpha attribute
+        # (Windows compositor-level transparency, not a fake/simulated
+        # one) applies uniformly to the entire window including all
+        # buttons/text, not just the background. gui.window_opacity in
+        # config.yaml (0.0-1.0, 1.0 = fully opaque) controls how strong it
+        # is; defaults to a subtle see-through rather than something that
+        # hurts button/text legibility.
+        self.window_opacity = gui_cfg.get("window_opacity", 0.94)
+        self.root.attributes("-alpha", self.window_opacity)
         # Pin a fixed on-screen position — without this, Tk's default window
         # placement can land on a secondary monitor (including one at
         # negative coordinates, off the primary screen entirely) depending
@@ -251,14 +274,23 @@ class ControlPanel:
     # -- shared header + tab bar --------------------------------------------------
 
     def _build_header(self) -> None:
-        row = tk.Frame(self.root, bg=self.bg_color)
-        row.pack(fill="x", padx=18, pady=(18, 0))
+        if self._custom_bg_path:
+            banner_photo = self._load_banner_image(self._custom_bg_path, width=336, height=84)
+            if banner_photo is not None:
+                self._banner_photo = banner_photo  # keep alive, Tk drops GC'd PhotoImages
+                tk.Label(self.root, image=banner_photo, bg=self.bg_color).pack(
+                    fill="x", padx=18, pady=(18, 0)
+                )
 
-        self._mascot_canvas = tk.Canvas(
-            row, width=60, height=76, bg=self.bg_color, highlightthickness=0
-        )
-        self._mascot_canvas.pack(side="left", padx=(0, 10))
-        _draw_mascot(self._mascot_canvas)
+        row = tk.Frame(self.root, bg=self.bg_color)
+        row.pack(fill="x", padx=18, pady=(18 if not self._custom_bg_path else 10, 0))
+
+        if not self._custom_bg_path:
+            self._mascot_canvas = tk.Canvas(
+                row, width=60, height=76, bg=self.bg_color, highlightthickness=0
+            )
+            self._mascot_canvas.pack(side="left", padx=(0, 10))
+            _draw_mascot(self._mascot_canvas)
 
         title_col = tk.Frame(row, bg=self.bg_color)
         title_col.pack(side="left", fill="both", expand=True)
@@ -660,6 +692,58 @@ class ControlPanel:
                 yaml_rt.dump(doc, f)
         except Exception:
             pass  # rebind still works for this session even if the save fails
+
+    # -- custom background image (see backgrounds/README.txt) ----------------------
+
+    def _find_custom_background_path(self) -> str | None:
+        bg_dir = "backgrounds"
+        if not os.path.isdir(bg_dir):
+            return None
+        exts = (".png", ".jpg", ".jpeg", ".bmp")
+        candidates = sorted(
+            f for f in os.listdir(bg_dir)
+            if f.lower().startswith("background") and f.lower().endswith(exts)
+        )
+        return os.path.join(bg_dir, candidates[0]) if candidates else None
+
+    def _compute_image_tint(self, path: str) -> str | None:
+        """Derives a usable dark panel color from a user-supplied image's
+        average color — darkened/desaturated toward the existing purple
+        theme's brightness range so text drawn on top of it (same fg
+        colors as the flat-color theme) stays readable regardless of how
+        bright the source photo is."""
+        img = cv2.imread(path)
+        if img is None:
+            return None
+        b, g, r = [float(c) for c in cv2.mean(img)[:3]]
+        # Scale the brightest channel down to a dark-UI-appropriate level
+        # (~35/255) while preserving the hue ratio between channels, then
+        # floor everything a little so it never comes out near-black
+        # (indistinguishable from pure black) or washed out.
+        peak = max(r, g, b, 1.0)
+        target_peak = 35.0
+        scale = target_peak / peak
+        r, g, b = (min(255, max(18, c * scale)) for c in (r, g, b))
+        return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
+
+    def _load_banner_image(self, path: str, width: int, height: int):
+        """Cover-fit crop of a user-supplied image to exactly width x
+        height, same crop/resize/encode technique already used for the
+        floor-number and ELO overlay mirrors elsewhere in this file."""
+        img = cv2.imread(path)
+        if img is None:
+            return None
+        ih, iw = img.shape[:2]
+        scale = max(width / iw, height / ih)
+        new_w, new_h = max(1, round(iw * scale)), max(1, round(ih * scale))
+        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        x0 = (new_w - width) // 2
+        y0 = (new_h - height) // 2
+        img = img[y0:y0 + height, x0:x0 + width]
+        ok, buf = cv2.imencode(".png", img)
+        if not ok:
+            return None
+        return tk.PhotoImage(data=buf.tobytes())
 
     # -- AFK banner (Toplevel, borderless, always-on-top) --------------------------
 

@@ -19,6 +19,15 @@ gui:
   # Control panel background color — click the 🎨 swatch in the header to
   # change it live with a color picker; it's saved back here automatically.
   background_color: "#150a1f"
+  # Whole-window "see-through" transparency (Windows compositor-level, via
+  # Tk's -alpha attribute) — 1.0 is fully opaque, lower is more see-through.
+  # Applies to the whole window (buttons/text included), not just the
+  # background, so keep it fairly high if you want controls to stay legible.
+  window_opacity: 0.94
+  # Drop an image named "background.png"/.jpg/.jpeg/.bmp in the backgrounds/
+  # folder (see backgrounds/README.txt) to show it as a header banner and
+  # auto-tint the panel to match it — no config needed for that part, it's
+  # picked up automatically at startup.
 
 ai_vision:
   # Used by door_detection.method: "ai_hybrid" — an actual vision-model
