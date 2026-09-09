@@ -740,10 +740,19 @@ class DoorNavigator:
         # actually reached it, sending it off toward the generic point
         # instead and never entering the door at all (live-observed
         # 2026-09-09: closer "combat" doors confirmed fine, farther "elite"
-        # doors never registered a floor change, 3 attempts in a row). If
-        # there's still no change halfway through the budget, re-click the
-        # SAME door target once (a retry, not a redirect) in case the
-        # original click missed or got consumed by something else.
+        # doors never registered a floor change, 3 attempts in a row).
+        #
+        # If there's still no change halfway through the budget, retry once
+        # — but NOT at the exact same point. Live debug screenshots
+        # (2026-09-09) showed the doors sit on a raised platform at the
+        # arena's edge, with the actual lit walkable floor more centered;
+        # clicking straight down from a door near the screen edge can land
+        # just past the floor's edge into unwalkable space (confirmed: the
+        # same door type failed at x=524, then succeeded at x=583 on the
+        # very next detection — a 59px difference in x was the difference
+        # between failure and success). The retry click is nudged partway
+        # toward screen-center at the same y, more likely to land on lit
+        # floor than repeating the identical point.
         walked = 0.0
         reached_new_floor = False
         reclicked = False
@@ -756,8 +765,10 @@ class DoorNavigator:
                 reached_new_floor = True
                 break
             if not reclicked and walked >= self.walk_to_center_max_seconds / 2:
-                self.logger.info("No floor change yet — re-clicking '%s' target.", door_type)
-                input_sim.click_at(*target)
+                retry_x = int(target[0] + (self.frame_w / 2 - target[0]) * 0.5)
+                retry_target = (retry_x, target[1])
+                self.logger.info("No floor change yet — retrying '%s' closer to center at %s.", door_type, retry_target)
+                input_sim.click_at(*retry_target)
                 reclicked = True
 
         self.self_tuner.record_walk_confirm_result(reached_new_floor)
