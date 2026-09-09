@@ -90,6 +90,12 @@ class DoorNavigator:
         # limit (not a normal stopping point).
         self.click_to_move_reclick_interval_seconds = mv.get("click_to_move_reclick_interval_seconds", 1.5)
         self.click_to_move_max_total_seconds = mv.get("click_to_move_max_total_seconds", 15.0)
+        # User-requested (2026-09-09): after the floor changes, keep walking
+        # (re-clicking the forward point) for this long total to actually
+        # reach the new floor's center — e.g. up a flight of stairs from the
+        # doorway — not just one click and a short fixed wait.
+        self.click_to_move_center_walk_seconds = mv.get("click_to_move_center_walk_seconds", 3.5)
+        self.click_to_move_center_walk_step_seconds = mv.get("click_to_move_center_walk_step_seconds", 1.0)
         fwd_pt = mv.get("click_to_move_forward_click_point", [0.5, 0.55])
         self._forward_click_fx, self._forward_click_fy = fwd_pt[0], fwd_pt[1]
         self.interact_key = mv.get("interact_key")
@@ -815,8 +821,18 @@ class DoorNavigator:
         self.self_tuner.record_walk_confirm_result(reached_new_floor)
 
         if reached_new_floor:
-            self._click_walk_forward()
-            time.sleep(self.walk_to_center_extra_seconds)
+            # User-requested (2026-09-09): a single forward click + short
+            # sleep wasn't enough to actually reach the new floor's center
+            # (e.g. up a flight of stairs from the doorway) — door detection
+            # needs a clear, centered view of the new arena, not the edge
+            # right by the doorway. Keeps re-clicking the forward point over
+            # a longer, repeated walk instead of one click and a fixed wait.
+            self.logger.info("Walking to the new floor's center so doors can be detected.")
+            walked = 0.0
+            while walked < self.click_to_move_center_walk_seconds:
+                self._click_walk_forward()
+                time.sleep(self.click_to_move_center_walk_step_seconds)
+                walked += self.click_to_move_center_walk_step_seconds
         else:
             self.logger.info(
                 "Floor number still hadn't changed after %.1fs — stopping here to be safe.",
