@@ -15,6 +15,11 @@ screen:
   # Region of the screen that actually shows the game (x, y, w, h).
   game_region: [0, 0, 2560, 1440]
 
+gui:
+  # Control panel background color — click the 🎨 swatch in the header to
+  # change it live with a color picker; it's saved back here automatically.
+  background_color: "#150a1f"
+
 ai_vision:
   # Used by door_detection.method: "ai_hybrid" — an actual vision-model
   # call decides WHICH door type is on screen (semantic understanding, so

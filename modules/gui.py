@@ -75,21 +75,29 @@ def _make_click_through(window: tk.Misc) -> None:
     except Exception:
         pass
 
-_BG = "#1e1e1e"
-_PANEL = "#262626"
-_FG = "#e8e8e8"
-_MUTED = "#9a9a9a"
+# Black/purple "bubbly" theme (2026-09-09) — the default background is
+# live-customizable per user (see ControlPanel's color-mixer button in the
+# header, and gui.background_color in config.yaml); everything else below
+# is the fixed accent palette drawn on top of it.
+_BG = "#150a1f"
+_PANEL = "#2a1640"
+_PANEL_LIGHT = "#3a2158"
+_FG = "#f2e9ff"
+_MUTED = "#b199d1"
 _ACCENT_RUNNING = "#3ddc72"
-_ACCENT_STOPPED = "#ff5555"
+_ACCENT_STOPPED = "#ff5c8a"
 _ACCENT_PAUSED = "#ffb347"
+_ACCENT_PURPLE = "#a259ff"
+_ACCENT_PURPLE_BRIGHT = "#c58bff"
 _BANNER_RED = "#ff2b2b"
 _ELO_LIGHT_BLUE = "#66ccff"
 _ELO_PANEL_BLUE = "#1565c0"
-_TAB_ACTIVE = "#333333"
-_TAB_INACTIVE = "#1e1e1e"
+_TAB_ACTIVE = "#3a2158"
+_TAB_INACTIVE = "#1c0e2b"
 _TRACER_CHOSEN = "#00ff88"
 _TRACER_OTHER = "#888888"
 _TRACER_DEADZONE = "#ffcc00"
+_TITLE_FONT = "Segoe Print"  # rounder/bubblier than Segoe UI; falls back gracefully if unavailable
 
 # Modifier-only keysyms — ignored during hotkey rebinding since they can't
 # be pressed on their own as a real toggle key (a bare Shift/Ctrl/Alt tap
@@ -115,6 +123,41 @@ def _tk_keysym_to_hotkey_name(keysym: str) -> str | None:
         return None
     name = keysym.lower()
     return _REBIND_KEYSYM_OVERRIDES.get(name, name)
+
+
+def _draw_mascot(canvas: tk.Canvas) -> None:
+    """Small chibi header mascot — an original teal-twin-tails character
+    silhouette (2026-09-09, per explicit user request for a "vocaloid-ish"
+    feel in the header). Deliberately generic/original artwork, not any
+    specific copyrighted character's actual design — just simple Canvas
+    shapes evoking the same general vibe (teal twintails, chibi
+    proportions) without reproducing anyone's protected character art."""
+    teal = "#2fe0c9"
+    teal_dark = "#1aa392"
+    skin = "#ffe0c2"
+    outfit = "#241238"
+    outfit_trim = "#a259ff"
+
+    # Twin tails, drawn first so the head/bangs layer over their roots.
+    canvas.create_oval(2, 16, 20, 68, fill=teal, outline=teal_dark, width=1)
+    canvas.create_oval(40, 16, 58, 68, fill=teal, outline=teal_dark, width=1)
+
+    # Body (simple chibi torso).
+    canvas.create_rectangle(18, 50, 42, 74, fill=outfit, outline="", width=0)
+    canvas.create_oval(16, 46, 44, 58, fill=outfit, outline="")
+    canvas.create_line(20, 56, 40, 56, fill=outfit_trim, width=2)
+
+    # Head + bangs.
+    canvas.create_oval(12, 6, 48, 42, fill=skin, outline="")
+    canvas.create_arc(10, 2, 50, 34, start=0, extent=180, fill=teal, outline="", style="chord")
+    canvas.create_oval(9, 16, 19, 26, fill=teal, outline="")
+    canvas.create_oval(41, 16, 51, 26, fill=teal, outline="")
+
+    # Face.
+    canvas.create_oval(20, 22, 24, 27, fill="#241238", outline="")
+    canvas.create_oval(36, 22, 40, 27, fill="#241238", outline="")
+    canvas.create_oval(18, 29, 23, 33, fill="#ff9fc2", outline="")
+    canvas.create_oval(37, 29, 42, 33, fill="#ff9fc2", outline="")
 
 
 class ControlPanel:
@@ -169,6 +212,9 @@ class ControlPanel:
         self.pvp_key = hk.get("pvp_toggle", "p").upper()
         self.auto_clicker_key = hk.get("auto_clicker_toggle", "c").upper()
 
+        gui_cfg = config.get("gui", {})
+        self.bg_color = gui_cfg.get("background_color", _BG)
+
         self._sct = mss.mss()
         self._banner_visible = False
         self._tracer_visible = False
@@ -179,7 +225,7 @@ class ControlPanel:
 
         self.root = tk.Tk()
         self.root.title("Summon Heroes Macro")
-        self.root.configure(bg=_BG)
+        self.root.configure(bg=self.bg_color)
         self.root.resizable(False, False)
         self.root.attributes("-topmost", True)
         # Pin a fixed on-screen position — without this, Tk's default window
@@ -205,15 +251,63 @@ class ControlPanel:
     # -- shared header + tab bar --------------------------------------------------
 
     def _build_header(self) -> None:
+        row = tk.Frame(self.root, bg=self.bg_color)
+        row.pack(fill="x", padx=18, pady=(18, 0))
+
+        self._mascot_canvas = tk.Canvas(
+            row, width=60, height=76, bg=self.bg_color, highlightthickness=0
+        )
+        self._mascot_canvas.pack(side="left", padx=(0, 10))
+        _draw_mascot(self._mascot_canvas)
+
+        title_col = tk.Frame(row, bg=self.bg_color)
+        title_col.pack(side="left", fill="both", expand=True)
         tk.Label(
-            self.root, text="Summon Heroes", font=("Segoe UI", 18, "bold"), fg=_FG, bg=_BG
-        ).pack(pady=(18, 0))
+            title_col, text="Summon Heroes", font=(_TITLE_FONT, 20, "bold"), fg=_ACCENT_PURPLE_BRIGHT,
+            bg=self.bg_color,
+        ).pack(anchor="w")
         tk.Label(
-            self.root, text="AFK Automation", font=("Segoe UI", 11), fg=_MUTED, bg=_BG
-        ).pack(pady=(0, 12))
+            title_col, text="AFK Automation", font=("Segoe UI", 11), fg=_MUTED, bg=self.bg_color
+        ).pack(anchor="w")
+
+        self._bg_swatch_btn = tk.Canvas(
+            row, width=26, height=26, bg=self.bg_color, highlightthickness=1,
+            highlightbackground=_ACCENT_PURPLE, cursor="hand2",
+        )
+        self._bg_swatch_btn.pack(side="right", padx=(6, 0))
+        self._bg_swatch_id = self._bg_swatch_btn.create_rectangle(
+            2, 2, 24, 24, fill=self.bg_color, outline=""
+        )
+        self._bg_swatch_btn.bind("<Button-1>", lambda e: self._pick_background_color())
+        palette_label = tk.Label(row, text="🎨", font=("Segoe UI", 13), bg=self.bg_color, cursor="hand2")
+        palette_label.pack(side="right")
+        palette_label.bind("<Button-1>", lambda e: self._pick_background_color())
+
+    def _pick_background_color(self) -> None:
+        from tkinter import colorchooser
+        rgb, hex_color = colorchooser.askcolor(color=self.bg_color, title="Pick a background color", parent=self.root)
+        if not hex_color:
+            return
+        self._apply_background_color(hex_color)
+        self._save_config_value("gui", "background_color", hex_color)
+
+    def _apply_background_color(self, new_color: str) -> None:
+        old_color = self.bg_color
+        self.bg_color = new_color
+        self._recolor_tree(self.root, old_color, new_color)
+        self._bg_swatch_btn.itemconfig(self._bg_swatch_id, fill=new_color)
+
+    def _recolor_tree(self, widget, old_color: str, new_color: str) -> None:
+        try:
+            if str(widget.cget("bg")).lower() == old_color.lower():
+                widget.configure(bg=new_color)
+        except tk.TclError:
+            pass
+        for child in widget.winfo_children():
+            self._recolor_tree(child, old_color, new_color)
 
     def _build_tabs(self) -> None:
-        bar = tk.Frame(self.root, bg=_BG)
+        bar = tk.Frame(self.root, bg=self.bg_color)
         bar.pack(fill="x", padx=18)
         self._tab_buttons: dict[str, tk.Button] = {}
         for key, label in (("story", "Story"), ("towers", "Towers"), ("pvp", "PvP"), ("autoclicker", "Auto Clicker")):
@@ -225,7 +319,7 @@ class ControlPanel:
             btn.pack(side="left", padx=(0, 4), fill="x", expand=True)
             self._tab_buttons[key] = btn
 
-        self._content = tk.Frame(self.root, bg=_BG)
+        self._content = tk.Frame(self.root, bg=self.bg_color)
         self._content.pack(fill="both", expand=True, padx=18, pady=(10, 0))
 
     def _show_tab(self, which: str) -> None:
@@ -246,21 +340,21 @@ class ControlPanel:
     # -- Story tab ----------------------------------------------------------------
 
     def _build_story_tab(self) -> None:
-        frame = tk.Frame(self._content, bg=_BG)
+        frame = tk.Frame(self._content, bg=self.bg_color)
         self._story_frame = frame
         pad = {"padx": 0, "pady": 6}
 
-        status_frame = tk.Frame(frame, bg=_BG)
+        status_frame = tk.Frame(frame, bg=self.bg_color)
         status_frame.pack(**pad)
-        self._story_dot = tk.Canvas(status_frame, width=14, height=14, bg=_BG, highlightthickness=0)
+        self._story_dot = tk.Canvas(status_frame, width=14, height=14, bg=self.bg_color, highlightthickness=0)
         self._story_dot.pack(side="left", padx=(0, 8))
         self._story_dot_id = self._story_dot.create_oval(2, 2, 12, 12, fill=_ACCENT_STOPPED, outline="")
         self._story_status_label = tk.Label(
-            status_frame, text="STOPPED", font=("Segoe UI", 13, "bold"), fg=_ACCENT_STOPPED, bg=_BG
+            status_frame, text="STOPPED", font=("Segoe UI", 13, "bold"), fg=_ACCENT_STOPPED, bg=self.bg_color
         )
         self._story_status_label.pack(side="left")
 
-        btn_frame = tk.Frame(frame, bg=_BG)
+        btn_frame = tk.Frame(frame, bg=self.bg_color)
         btn_frame.pack(**pad)
         tk.Button(
             btn_frame, text="▶  Start", font=("Segoe UI", 11, "bold"),
@@ -275,11 +369,11 @@ class ControlPanel:
 
         tk.Label(
             frame, text=f"Hotkeys: {self.start_key} start  ·  {self.stop_key} stop",
-            font=("Segoe UI", 9), fg="#7a7a7a", bg=_BG,
+            font=("Segoe UI", 9), fg="#7a7a7a", bg=self.bg_color,
         ).pack(pady=(4, 2))
         tk.Label(
             frame, text=f"Clicks teleport-to-hero every {self.interval:g}s while running.",
-            font=("Segoe UI", 9), fg="#7a7a7a", bg=_BG,
+            font=("Segoe UI", 9), fg="#7a7a7a", bg=self.bg_color,
         ).pack(pady=(0, 16))
 
     def _story_start(self) -> None:
@@ -292,16 +386,16 @@ class ControlPanel:
     # -- Towers tab -----------------------------------------------------------------
 
     def _build_towers_tab(self) -> None:
-        frame = tk.Frame(self._content, bg=_BG)
+        frame = tk.Frame(self._content, bg=self.bg_color)
         self._towers_frame = frame
 
         self._towers_indicator = tk.Label(
             frame, text="AUTOMATION STOPPED", font=("Segoe UI", 14, "bold"),
-            fg=_ACCENT_STOPPED, bg=_BG,
+            fg=_ACCENT_STOPPED, bg=self.bg_color,
         )
         self._towers_indicator.pack(pady=(4, 10))
 
-        btn_frame = tk.Frame(frame, bg=_BG)
+        btn_frame = tk.Frame(frame, bg=self.bg_color)
         btn_frame.pack(pady=4)
         tk.Button(
             btn_frame, text="▶  Start / Resume", font=("Segoe UI", 10, "bold"),
@@ -321,11 +415,11 @@ class ControlPanel:
 
         tk.Label(
             frame, text=f"Hotkey: {self.towers_key} = toggle enable/pause",
-            font=("Segoe UI", 9), fg="#7a7a7a", bg=_BG,
+            font=("Segoe UI", 9), fg="#7a7a7a", bg=self.bg_color,
         ).pack(pady=(2, 10))
 
         # stat grid
-        grid = tk.Frame(frame, bg=_BG)
+        grid = tk.Frame(frame, bg=self.bg_color)
         grid.pack(pady=(0, 10), fill="x")
         self._stat_labels: dict[str, tk.Label] = {}
         stat_defs = [
@@ -344,10 +438,10 @@ class ControlPanel:
             tk.Label(cell, text=caption, font=("Segoe UI", 8), fg=_MUTED, bg=_PANEL).pack(pady=(0, 6))
             self._stat_labels[key] = val
 
-        tk.Label(frame, text="Activity Log", font=("Segoe UI", 9, "bold"), fg=_MUTED, bg=_BG).pack(
+        tk.Label(frame, text="Activity Log", font=("Segoe UI", 9, "bold"), fg=_MUTED, bg=self.bg_color).pack(
             anchor="w", pady=(4, 2)
         )
-        log_frame = tk.Frame(frame, bg=_BG)
+        log_frame = tk.Frame(frame, bg=self.bg_color)
         log_frame.pack(fill="both", expand=True, pady=(0, 16))
         scrollbar = tk.Scrollbar(log_frame)
         scrollbar.pack(side="right", fill="y")
@@ -384,16 +478,16 @@ class ControlPanel:
     # -- PvP tab --------------------------------------------------------------------
 
     def _build_pvp_tab(self) -> None:
-        frame = tk.Frame(self._content, bg=_BG)
+        frame = tk.Frame(self._content, bg=self.bg_color)
         self._pvp_frame = frame
 
         self._pvp_indicator = tk.Label(
             frame, text="STOPPED", font=("Segoe UI", 14, "bold"),
-            fg=_ACCENT_STOPPED, bg=_BG,
+            fg=_ACCENT_STOPPED, bg=self.bg_color,
         )
         self._pvp_indicator.pack(pady=(4, 10))
 
-        btn_frame = tk.Frame(frame, bg=_BG)
+        btn_frame = tk.Frame(frame, bg=self.bg_color)
         btn_frame.pack(pady=4)
         tk.Button(
             btn_frame, text="▶  Start", font=("Segoe UI", 11, "bold"),
@@ -408,11 +502,11 @@ class ControlPanel:
 
         tk.Label(
             frame, text=f"Hotkey: {self.pvp_key} = toggle",
-            font=("Segoe UI", 9), fg="#7a7a7a", bg=_BG,
+            font=("Segoe UI", 9), fg="#7a7a7a", bg=self.bg_color,
         ).pack(pady=(4, 2))
         tk.Label(
             frame, text="Spam-clicks the Play Ranked button nonstop while running.",
-            font=("Segoe UI", 9), fg="#7a7a7a", bg=_BG,
+            font=("Segoe UI", 9), fg="#7a7a7a", bg=self.bg_color,
         ).pack(pady=(0, 8))
 
         cell = tk.Frame(frame, bg=_PANEL)
@@ -421,10 +515,10 @@ class ControlPanel:
         self._pvp_clicks_label.pack(pady=(6, 0))
         tk.Label(cell, text="Clicks", font=("Segoe UI", 8), fg=_MUTED, bg=_PANEL).pack(pady=(0, 6))
 
-        tk.Label(frame, text="Activity Log", font=("Segoe UI", 9, "bold"), fg=_MUTED, bg=_BG).pack(
+        tk.Label(frame, text="Activity Log", font=("Segoe UI", 9, "bold"), fg=_MUTED, bg=self.bg_color).pack(
             anchor="w", pady=(4, 2)
         )
-        log_frame = tk.Frame(frame, bg=_BG)
+        log_frame = tk.Frame(frame, bg=self.bg_color)
         log_frame.pack(fill="both", expand=True, pady=(0, 16))
         scrollbar = tk.Scrollbar(log_frame)
         scrollbar.pack(side="right", fill="y")
@@ -450,16 +544,16 @@ class ControlPanel:
     # -- Auto Clicker tab -------------------------------------------------------------
 
     def _build_auto_clicker_tab(self) -> None:
-        frame = tk.Frame(self._content, bg=_BG)
+        frame = tk.Frame(self._content, bg=self.bg_color)
         self._autoclicker_frame = frame
 
         self._autoclicker_indicator = tk.Label(
             frame, text="STOPPED", font=("Segoe UI", 14, "bold"),
-            fg=_ACCENT_STOPPED, bg=_BG,
+            fg=_ACCENT_STOPPED, bg=self.bg_color,
         )
         self._autoclicker_indicator.pack(pady=(4, 10))
 
-        btn_frame = tk.Frame(frame, bg=_BG)
+        btn_frame = tk.Frame(frame, bg=self.bg_color)
         btn_frame.pack(pady=4)
         tk.Button(
             btn_frame, text="▶  Start", font=("Segoe UI", 11, "bold"),
@@ -472,10 +566,10 @@ class ControlPanel:
             relief="flat", width=10, command=self._autoclicker_stop,
         ).pack(side="left", padx=6)
 
-        rebind_frame = tk.Frame(frame, bg=_BG)
+        rebind_frame = tk.Frame(frame, bg=self.bg_color)
         rebind_frame.pack(pady=(6, 2))
         self._autoclicker_hotkey_label = tk.Label(
-            rebind_frame, text=f"Hotkey: {self.auto_clicker_key}", font=("Segoe UI", 9), fg="#7a7a7a", bg=_BG,
+            rebind_frame, text=f"Hotkey: {self.auto_clicker_key}", font=("Segoe UI", 9), fg="#7a7a7a", bg=self.bg_color,
         )
         self._autoclicker_hotkey_label.pack(side="left", padx=(0, 8))
         self._autoclicker_rebind_btn = tk.Button(
@@ -487,7 +581,7 @@ class ControlPanel:
 
         tk.Label(
             frame, text="Clicks at the current cursor position nonstop while running —\nmove the mouse where you want it clicking.",
-            font=("Segoe UI", 9), fg="#7a7a7a", bg=_BG, justify="center",
+            font=("Segoe UI", 9), fg="#7a7a7a", bg=self.bg_color, justify="center",
         ).pack(pady=(6, 8))
 
         cell = tk.Frame(frame, bg=_PANEL)
@@ -496,10 +590,10 @@ class ControlPanel:
         self._autoclicker_clicks_label.pack(pady=(6, 0))
         tk.Label(cell, text="Clicks", font=("Segoe UI", 8), fg=_MUTED, bg=_PANEL).pack(pady=(0, 6))
 
-        tk.Label(frame, text="Activity Log", font=("Segoe UI", 9, "bold"), fg=_MUTED, bg=_BG).pack(
+        tk.Label(frame, text="Activity Log", font=("Segoe UI", 9, "bold"), fg=_MUTED, bg=self.bg_color).pack(
             anchor="w", pady=(4, 2)
         )
-        log_frame = tk.Frame(frame, bg=_BG)
+        log_frame = tk.Frame(frame, bg=self.bg_color)
         log_frame.pack(fill="both", expand=True, pady=(0, 16))
         scrollbar = tk.Scrollbar(log_frame)
         scrollbar.pack(side="right", fill="y")
