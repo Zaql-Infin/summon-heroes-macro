@@ -9,11 +9,14 @@ This is the validated logic from earlier testing:
 - Priority ranking with per-type threshold overrides (a generic-shaped icon
   can false-match more than a distinctive one).
 - Click-to-move (2026-09-09, movement.click_to_move) is now the primary way
-  to approach a visible door: click its approximate ground point and let
-  Roblox's own pathfinding walk there — no camera alignment needed at all,
-  since a click's target doesn't depend on which way the camera currently
-  faces. Falls back to a WASD camera-align-then-hold-forward approach
-  (movement.click_to_move: false) if click-to-move isn't enabled in-game.
+  to approach a visible door: RIGHT-click (click_to_move_button) its
+  approximate ground point and let Roblox walk there. User-confirmed
+  2026-09-09: the character still has to be roughly facing the direction
+  it's meant to walk, so _ensure_first_person locks the camera to
+  first-person once (screen-center then reliably matches actual facing,
+  unlike a free third-person camera). Falls back to a WASD
+  camera-align-then-hold-forward approach (movement.click_to_move: false)
+  if click-to-move isn't enabled in-game.
 - Camera turning (arrow keys or mouse-drag) is used only by scan_tick, a
   bounded, stationary multi-direction sweep to look around for a door
   that isn't in view at all — it never walks forward while turning, to
@@ -69,6 +72,14 @@ class DoorNavigator:
         # offset_fraction above if that ends up being further down anyway.
         self.click_to_move_ground_min_fraction = mv.get("click_to_move_ground_min_fraction", 0.55)
         self.click_to_move_arrival_wait_seconds = mv.get("click_to_move_arrival_wait_seconds", 2.0)
+        # User-confirmed 2026-09-09: this game's click-to-move is RIGHT-click
+        # (not left), and the character has to already be roughly facing a
+        # direction to walk that way — first-person keeps screen-center
+        # aligned with facing direction, unlike a free third-person camera.
+        self.click_to_move_button = mv.get("click_to_move_button", "right")
+        self.click_to_move_first_person = mv.get("click_to_move_first_person", True)
+        self.click_to_move_zoom_in_clicks = mv.get("click_to_move_zoom_in_clicks", 15)
+        self._first_person_set = False
         fwd_pt = mv.get("click_to_move_forward_click_point", [0.5, 0.55])
         self._forward_click_fx, self._forward_click_fy = fwd_pt[0], fwd_pt[1]
         self.interact_key = mv.get("interact_key")
@@ -696,20 +707,43 @@ class DoorNavigator:
         just walked to."""
         fx = int(self.frame_w * self._forward_click_fx)
         fy = int(self.frame_h * self._forward_click_fy)
-        input_sim.click_at(fx, fy)
+        input_sim.click_at(fx, fy, button=self.click_to_move_button)
+
+    def _ensure_first_person(self) -> None:
+        """User-confirmed 2026-09-09: click-to-move here needs the character
+        already roughly facing the direction it's meant to walk — a free
+        third-person camera can point anywhere regardless of facing, but
+        first-person keeps screen-center locked to the actual facing
+        direction, which is what click-to-move's on-screen target position
+        needs to line up with. Zooms the camera all the way in (Roblox's
+        default scroll-to-zoom) once per navigator lifetime — first-person,
+        once reached, persists on its own after that."""
+        if not self.click_to_move_first_person or self._first_person_set:
+            return
+        self._ensure_game_focus()
+        cx = self.frame_w // 2
+        cy = int(self.frame_h * 0.4)
+        input_sim.scroll_at(cx, cy, self.click_to_move_zoom_in_clicks)
+        self.logger.info("Zoomed camera to first-person for click-to-move.")
+        self._first_person_set = True
 
     def _approach_and_enter_clickmove(self, match: vision.Match, door_type: str | None) -> None:
-        """Click-to-move variant of approach_and_enter (2026-09-09) — no
-        camera alignment needed at all, since a click's target doesn't
-        depend on which way the camera currently faces, only where on
-        screen the door actually is. Clicks the door's approximate ground
-        point once (see click_to_move_ground_offset_fraction) and lets
-        Roblox's own pathfinding walk there, then re-uses the same
-        floor-region pixel-diff confirmation loop approach_and_enter's WASD
-        path uses — just clicking a fixed forward ground point each step
-        instead of holding the forward key. Requires click-to-move enabled
-        in Roblox's own settings (user-confirmed on, 2026-09-09); set
-        movement.click_to_move: false to fall back to the WASD path if not."""
+        """Click-to-move variant of approach_and_enter (2026-09-09). Two
+        corrections from live user feedback the same day: (1) the move
+        button is RIGHT-click here, not left (click_to_move_button); (2)
+        the character has to already be roughly facing a direction to walk
+        that way, unlike a pure NavMesh-pathfind-anywhere click-to-move —
+        _ensure_first_person locks the camera to first-person once so
+        screen-center reliably matches actual facing direction, which a
+        free third-person camera can't guarantee. Clicks the door's
+        approximate ground point once (see click_to_move_ground_offset_fraction)
+        and lets Roblox walk there, then re-uses the same floor-region
+        pixel-diff confirmation loop approach_and_enter's WASD path uses.
+        Requires click-to-move enabled in Roblox's own settings
+        (user-confirmed on, 2026-09-09); set movement.click_to_move: false
+        to fall back to the WASD path if not."""
+        self._ensure_first_person()
+
         if not door_type:
             self.logger.warning("approach_and_enter called with no known door type — clicking last-known position anyway.")
         cx, cy = match.center
@@ -717,8 +751,8 @@ class DoorNavigator:
         ground_y = max(ground_y, self.frame_h * self.click_to_move_ground_min_fraction)
         ground_y = min(ground_y, self.frame_h * 0.6)
         target = (int(cx), int(ground_y))
-        self.logger.info("Click-to-move: walking to '%s' at %s.", door_type, target)
-        input_sim.click_at(*target)
+        self.logger.info("Click-to-move (%s): walking to '%s' at %s.", self.click_to_move_button, door_type, target)
+        input_sim.click_at(*target, button=self.click_to_move_button)
         time.sleep(self.click_to_move_arrival_wait_seconds)
 
         if self.jump_key:
@@ -768,7 +802,7 @@ class DoorNavigator:
                 retry_x = int(target[0] + (self.frame_w / 2 - target[0]) * 0.5)
                 retry_target = (retry_x, target[1])
                 self.logger.info("No floor change yet — retrying '%s' closer to center at %s.", door_type, retry_target)
-                input_sim.click_at(*retry_target)
+                input_sim.click_at(*retry_target, button=self.click_to_move_button)
                 reclicked = True
 
         self.self_tuner.record_walk_confirm_result(reached_new_floor)

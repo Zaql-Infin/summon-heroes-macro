@@ -248,6 +248,20 @@ movement:
   # frame height), no matter how small/high the icon is; a bigger/lower
   # icon can still push it further down via the offset above.
   click_to_move_ground_min_fraction: 0.55
+  # User-confirmed 2026-09-09: this game's click-to-move is bound to
+  # RIGHT-click, not left.
+  click_to_move_button: "right"
+  # User-confirmed 2026-09-09: the character has to already be roughly
+  # facing a direction to walk that way — first-person keeps screen-center
+  # aligned with actual facing, unlike a free third-person camera. Locked
+  # once via a scroll-to-zoom-in, since first-person persists on its own
+  # after that. Set to false to leave the camera alone (e.g. if it's
+  # already first-person, or third-person turns out fine after all).
+  click_to_move_first_person: true
+  # How many scroll "clicks" to zoom in by — Roblox's default camera reaches
+  # first-person once fully zoomed in; NOT live-tuned, adjust if this over-
+  # or under-shoots first-person.
+  click_to_move_zoom_in_clicks: 15
   # How long to wait after the initial click-to-move click before assuming
   # the character has arrived (or is very close) and starting the forward-
   # nudge/floor-change-check loop below.
