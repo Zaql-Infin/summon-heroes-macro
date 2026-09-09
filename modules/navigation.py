@@ -700,17 +700,13 @@ class DoorNavigator:
         instead of holding the forward key. Requires click-to-move enabled
         in Roblox's own settings (user-confirmed on, 2026-09-09); set
         movement.click_to_move: false to fall back to the WASD path if not."""
-        if door_type:
-            cx, cy = match.center
-            ground_y = min(cy + match.h * self.click_to_move_ground_offset_fraction, self.frame_h * 0.6)
-            self.logger.info(
-                "Click-to-move: walking to '%s' at (%d, %d).", door_type, int(cx), int(ground_y)
-            )
-        else:
+        if not door_type:
             self.logger.warning("approach_and_enter called with no known door type — clicking last-known position anyway.")
-            cx, cy = match.center
-            ground_y = min(cy + match.h * self.click_to_move_ground_offset_fraction, self.frame_h * 0.6)
-        input_sim.click_at(int(cx), int(ground_y))
+        cx, cy = match.center
+        ground_y = min(cy + match.h * self.click_to_move_ground_offset_fraction, self.frame_h * 0.6)
+        target = (int(cx), int(ground_y))
+        self.logger.info("Click-to-move: walking to '%s' at %s.", door_type, target)
+        input_sim.click_at(*target)
         time.sleep(self.click_to_move_arrival_wait_seconds)
 
         if self.jump_key:
@@ -722,10 +718,24 @@ class DoorNavigator:
         if floor_crop_before is None:
             return
 
+        # Waits and re-checks the "Floor: N" crop, same as the WASD path —
+        # but critically does NOT click anywhere else while waiting.
+        # Clicking a generic unrelated forward point every tick (the
+        # original version) issues a brand new click-to-move command each
+        # time, which INTERRUPTS whatever path is already in progress — if
+        # click_to_move_arrival_wait_seconds wasn't long enough for a
+        # farther-away door, that redirect fired before the character ever
+        # actually reached it, sending it off toward the generic point
+        # instead and never entering the door at all (live-observed
+        # 2026-09-09: closer "combat" doors confirmed fine, farther "elite"
+        # doors never registered a floor change, 3 attempts in a row). If
+        # there's still no change halfway through the budget, re-click the
+        # SAME door target once (a retry, not a redirect) in case the
+        # original click missed or got consumed by something else.
         walked = 0.0
         reached_new_floor = False
+        reclicked = False
         while walked < self.walk_to_center_max_seconds:
-            self._click_walk_forward()
             time.sleep(self.walk_to_center_step_seconds)
             walked += self.walk_to_center_step_seconds
             floor_crop_now = self._floor_region_crop(self._grab_frame())
@@ -733,6 +743,10 @@ class DoorNavigator:
                 self.logger.info("Floor number changed — walking to platform center.")
                 reached_new_floor = True
                 break
+            if not reclicked and walked >= self.walk_to_center_max_seconds / 2:
+                self.logger.info("No floor change yet — re-clicking '%s' target.", door_type)
+                input_sim.click_at(*target)
+                reclicked = True
 
         self.self_tuner.record_walk_confirm_result(reached_new_floor)
 

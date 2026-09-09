@@ -301,7 +301,7 @@ movement:
   # not just a rare worst case. Capped much lower so a failed confirmation
   # costs little; still stops early on the rare case it does confirm.
   walk_to_center_step_seconds: 0.5
-  walk_to_center_max_seconds: 2.0
+  walk_to_center_max_seconds: 4.0
   walk_to_center_extra_seconds: 1.0
   # While waiting for a door (teleporting-to-hero, no door in view yet):
   # scan_tick does a bounded, STATIONARY camera sweep (no forward walking —

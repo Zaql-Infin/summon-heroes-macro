@@ -43,7 +43,15 @@ class SelfTuner:
         # (or floor, if delta is negative) an auto-adjustment will never
         # cross, so this can nudge a value but never run away with it.
         self._ALIGN_BUMP = ("movement", "align_max_attempts", 1, 10)
-        self._WALK_BUMP = ("movement", "walk_through_seconds", 0.3, 5.0)
+        # click_to_move (2026-09-09) skips _align_locally and never holds
+        # forward_key, so walk_through_seconds does nothing in that mode —
+        # bumping it would be a silent no-op. Bump walk_to_center_max_seconds
+        # instead (the actual budget the click-to-move confirm-wait loop
+        # uses) when click_to_move is on.
+        if config.get("movement", {}).get("click_to_move", True):
+            self._WALK_BUMP = ("movement", "walk_to_center_max_seconds", 0.5, 8.0)
+        else:
+            self._WALK_BUMP = ("movement", "walk_through_seconds", 0.3, 5.0)
         self._STREAK_NEEDED = 3
 
     def record_alignment_result(self, converged: bool) -> None:
