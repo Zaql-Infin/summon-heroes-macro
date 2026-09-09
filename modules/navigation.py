@@ -58,6 +58,16 @@ class DoorNavigator:
         # point, let Roblox's own pathfinding walk there.
         self.click_to_move = mv.get("click_to_move", True)
         self.click_to_move_ground_offset_fraction = mv.get("click_to_move_ground_offset_fraction", 0.35)
+        # Live-tested 2026-09-09: a door badge icon sits high in the frame
+        # (~25% down) and is small on screen, so match.h * offset_fraction
+        # alone barely moves the click off the icon — it was landing on the
+        # archway/wall, not the floor, so click-to-move never registered any
+        # movement at all ("its not going to the doors"). This floor makes
+        # sure the click always lands at LEAST this far down the frame
+        # (fraction of frame height) regardless of how small the icon is,
+        # while a closer/bigger icon can still push it lower via the
+        # offset_fraction above if that ends up being further down anyway.
+        self.click_to_move_ground_min_fraction = mv.get("click_to_move_ground_min_fraction", 0.55)
         self.click_to_move_arrival_wait_seconds = mv.get("click_to_move_arrival_wait_seconds", 2.0)
         fwd_pt = mv.get("click_to_move_forward_click_point", [0.5, 0.55])
         self._forward_click_fx, self._forward_click_fy = fwd_pt[0], fwd_pt[1]
@@ -703,7 +713,9 @@ class DoorNavigator:
         if not door_type:
             self.logger.warning("approach_and_enter called with no known door type — clicking last-known position anyway.")
         cx, cy = match.center
-        ground_y = min(cy + match.h * self.click_to_move_ground_offset_fraction, self.frame_h * 0.6)
+        ground_y = cy + match.h * self.click_to_move_ground_offset_fraction
+        ground_y = max(ground_y, self.frame_h * self.click_to_move_ground_min_fraction)
+        ground_y = min(ground_y, self.frame_h * 0.6)
         target = (int(cx), int(ground_y))
         self.logger.info("Click-to-move: walking to '%s' at %s.", door_type, target)
         input_sim.click_at(*target)

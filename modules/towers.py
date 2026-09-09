@@ -20,7 +20,15 @@ import cv2
 
 from . import navigation, vision
 
-_DEBUG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "debug")
+# os.getcwd(), not __file__ — in a frozen PyInstaller onefile build, __file__
+# resolves inside the temp _MEIPASS extraction dir (wiped after the process
+# exits), not the real exe folder, so debug screenshots would silently never
+# actually land anywhere retrievable (confirmed live 2026-09-09: the log
+# reported "Debug screenshot saved" every time, but the files never existed
+# anywhere on disk afterward). main.py anchors os.getcwd() to the real exe
+# directory at startup (os.chdir), same fix already applied to every other
+# external asset path in this project (config.yaml, templates/, etc.).
+_DEBUG_DIR = os.path.join(os.getcwd(), "debug")
 
 
 class TowersAutomation:

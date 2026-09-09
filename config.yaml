@@ -238,9 +238,16 @@ movement:
   # The door badge icon itself often isn't on walkable ground (it's mounted
   # on/above the archway) — clicking this far below its on-screen center,
   # as a fraction of the icon's own on-screen height, aims closer to the
-  # actual floor in front of the door. NOT live-tuned yet — adjust if
-  # clicks land on the wall/archway above the floor instead of on it.
+  # actual floor in front of the door.
   click_to_move_ground_offset_fraction: 0.35
+  # Live-tested 2026-09-09: the icon sits high in the frame (~25% down) and
+  # is small on screen, so the offset above alone barely moved the click
+  # off the icon — it landed on the archway/wall, not the floor, and
+  # click-to-move never registered any movement at all. This is a floor:
+  # the click always lands at LEAST this far down the frame (fraction of
+  # frame height), no matter how small/high the icon is; a bigger/lower
+  # icon can still push it further down via the offset above.
+  click_to_move_ground_min_fraction: 0.55
   # How long to wait after the initial click-to-move click before assuming
   # the character has arrived (or is very close) and starting the forward-
   # nudge/floor-change-check loop below.
