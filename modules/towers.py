@@ -94,14 +94,53 @@ class TowersAutomation:
             if self.show_overlays_fn:
                 self.show_overlays_fn()
 
-    def _check_for_door(self):
-        """Grabs a frame, runs detection, and saves a debug screenshot if a
-        door was found. Returns the match (or None)."""
-        frame = self._grab_frame()
+    def _check_for_door(self, frame=None):
+        """Runs detection on `frame` (grabs one if not given) and saves a
+        debug screenshot if a door was found. Returns the match (or None)."""
+        if frame is None:
+            frame = self._grab_frame()
         match = self.navigator.detect_door(frame)
         if match is not None:
             self._save_debug_screenshot(frame)
         return match
+
+    def _handle_boss_floor(self) -> None:
+        """Boss floors have no doors to detect at all — user-requested
+        (2026-09-09): spam the teleport button instead of searching, and
+        watch for the "Floor Cleared" banner to appear TWICE before handing
+        control back to normal door detection. A single appearance isn't
+        trusted alone, given how flaky this game's OCR read already is
+        elsewhere (see navigation.py's floor_cleared_status docstring)."""
+        bf_cfg = self.cfg.get("boss_floor", {})
+        interval = bf_cfg.get("teleport_spam_interval_seconds", 0.3)
+        required_clears = bf_cfg.get("required_clears", 2)
+        max_wait = bf_cfg.get("max_wait_seconds", 300.0)
+        self._log(f"[INFO] Boss floor detected — spamming teleport until floor cleared x{required_clears}")
+
+        clears_seen = 0
+        was_cleared = False
+        start = time.time()
+        while time.time() - start < max_wait:
+            if self._shutdown_flag.is_set() or not self.running_event.is_set():
+                return
+            try:
+                self.teleport_fn()
+                self.stats["teleports"] += 1
+            except Exception as e:
+                self.logger.error("Boss-floor teleport failed: %s", e)
+
+            frame = self._grab_frame()
+            cleared, diag = self.navigator.floor_cleared_status(frame)
+            if cleared and not was_cleared:
+                clears_seen += 1
+                self._log(f"[INFO] Floor cleared signal {clears_seen}/{required_clears} seen during boss floor ({diag})")
+                if clears_seen >= required_clears:
+                    self._log("[INFO] Boss floor cleared — resuming door detection")
+                    return
+            was_cleared = cleared
+            time.sleep(interval)
+
+        self._log(f"[RECOVERY] Boss floor handling timed out after {max_wait:g}s — resuming door detection anyway")
 
     def _wait_for_floor_cleared(self) -> None:
         """Blocks (with a timeout) until the "Floor Cleared" banner is
@@ -182,8 +221,23 @@ class TowersAutomation:
                 )
                 stuck_warned = True
 
+            # One frame reused for both checks below — avoids a redundant
+            # second full-resolution capture every cycle.
+            frame = self._grab_frame()
+
+            # Boss floors have no doors at all (user-requested 2026-09-09) —
+            # recognize one and hand off to spam-teleport-until-cleared
+            # instead of running door detection against it (which was
+            # observed live to false-match background scenery there).
+            if self.navigator.is_boss_floor(frame):
+                self._handle_boss_floor()
+                last_action = time.time()
+                search_start = time.time()
+                stuck_warned = False
+                continue
+
             # Always check for a door — every single cycle, never skipped.
-            match = self._check_for_door()
+            match = self._check_for_door(frame)
             if match is not None:
                 return match
 

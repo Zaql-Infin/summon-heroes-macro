@@ -94,8 +94,16 @@ class DoorNavigator:
         # (re-clicking the forward point) for this long total to actually
         # reach the new floor's center — e.g. up a flight of stairs from the
         # doorway — not just one click and a short fixed wait.
-        self.click_to_move_center_walk_seconds = mv.get("click_to_move_center_walk_seconds", 3.5)
-        self.click_to_move_center_walk_step_seconds = mv.get("click_to_move_center_walk_step_seconds", 1.0)
+        # Live-tested 2026-09-09: this still wasn't reaching the actual
+        # center (e.g. up a flight of stairs) — a near-bottom-center click
+        # is a small immediate nudge, not a "walk a real distance" click.
+        # Bumped duration and switched to a separate, farther-toward-the-
+        # horizon click point (smaller y fraction = farther away in a
+        # typical 3D projection) that covers much more ground per click.
+        self.click_to_move_center_walk_seconds = mv.get("click_to_move_center_walk_seconds", 6.0)
+        self.click_to_move_center_walk_step_seconds = mv.get("click_to_move_center_walk_step_seconds", 1.5)
+        center_pt = mv.get("click_to_move_center_click_point", [0.5, 0.4])
+        self._center_click_fx, self._center_click_fy = center_pt[0], center_pt[1]
         fwd_pt = mv.get("click_to_move_forward_click_point", [0.5, 0.55])
         self._forward_click_fx, self._forward_click_fy = fwd_pt[0], fwd_pt[1]
         self.interact_key = mv.get("interact_key")
@@ -562,6 +570,25 @@ class DoorNavigator:
         cleared, _ = self.floor_cleared_status(frame)
         return cleared
 
+    def is_boss_floor(self, frame) -> bool:
+        """OCR-based check for the "BOSS: <name>" banner shown at the very
+        top of the screen during a boss encounter. Boss floors have no
+        doors at all — live debug screenshot 2026-09-09 caught detect_door()
+        false-matching background scenery as a "chest" door mid-boss-fight
+        (score 0.54, clicked, obviously went nowhere since no real door was
+        there). User-requested (2026-09-09): recognize these floors and
+        spam the teleport button instead of searching for doors."""
+        bf_cfg = self.cfg.get("boss_floor", {})
+        if not bf_cfg.get("enabled", True):
+            return False
+        region = bf_cfg.get("ocr_region", [560, 0, 1440, 90])
+        keyword = bf_cfg.get("ocr_keyword", "BOSS")
+        try:
+            text = vision.ocr_text(frame, region=region).strip()
+            return keyword.upper() in text.upper()
+        except Exception:
+            return False
+
     def save_debug_image(self, frame, path: str) -> None:
         """Draws every candidate from the most recent detect_door() call
         onto a copy of the frame that was actually detected on (green =
@@ -725,6 +752,16 @@ class DoorNavigator:
         fy = int(self.frame_h * self._forward_click_fy)
         input_sim.click_at(fx, fy, button=self.click_to_move_button)
 
+    def _click_walk_center(self) -> None:
+        """Clicks farther toward the horizon (click_to_move_center_click_point,
+        a smaller y fraction than the near-forward nudge point above) to
+        cover much more ground per click — used to actually reach the new
+        floor's center after a room transition (e.g. up a flight of stairs),
+        not just a small immediate nudge."""
+        fx = int(self.frame_w * self._center_click_fx)
+        fy = int(self.frame_h * self._center_click_fy)
+        input_sim.click_at(fx, fy, button=self.click_to_move_button)
+
     def _ensure_first_person(self) -> None:
         """User-confirmed 2026-09-09: click-to-move here needs the character
         already roughly facing the direction it's meant to walk — a free
@@ -825,12 +862,14 @@ class DoorNavigator:
             # sleep wasn't enough to actually reach the new floor's center
             # (e.g. up a flight of stairs from the doorway) — door detection
             # needs a clear, centered view of the new arena, not the edge
-            # right by the doorway. Keeps re-clicking the forward point over
-            # a longer, repeated walk instead of one click and a fixed wait.
+            # right by the doorway. Uses the farther-toward-horizon center
+            # click point (covers more ground per click than the near-
+            # forward nudge point) and keeps re-clicking it over a longer
+            # walk instead of one click and a fixed wait.
             self.logger.info("Walking to the new floor's center so doors can be detected.")
             walked = 0.0
             while walked < self.click_to_move_center_walk_seconds:
-                self._click_walk_forward()
+                self._click_walk_center()
                 time.sleep(self.click_to_move_center_walk_step_seconds)
                 walked += self.click_to_move_center_walk_step_seconds
         else:

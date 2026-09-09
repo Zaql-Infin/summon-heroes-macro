@@ -52,6 +52,8 @@ resolution_profiles:
       floor_region: [563, 74, 195, 49]
     door_detection:
       search_region: [0, 38, 1920, 638]
+    boss_floor:
+      ocr_region: [420, 0, 1080, 68]
 
 gui:
   # Control panel background color — click the 🎨 swatch in the header to
@@ -156,6 +158,29 @@ auto_clicker:
 # =============================================================================
 # Towers mode only, below this line.
 # =============================================================================
+
+boss_floor:
+  # User-requested (2026-09-09): boss floors have no doors at all — a live
+  # debug screenshot caught detect_door() false-matching background scenery
+  # as a "chest" door during a boss fight (score 0.54, clicked, obviously
+  # went nowhere). Detects the "BOSS: <name>" banner shown at the very top
+  # of the screen during a boss encounter (OCR) and, once seen, spams the
+  # teleport button instead of searching for doors, watching for the
+  # "Floor Cleared" banner to appear TWICE (required_clears) before handing
+  # control back to normal door detection — a single appearance isn't
+  # trusted alone, given how flaky this game's OCR read already is
+  # elsewhere (see floor_cleared below).
+  enabled: true
+  # [x, y, w, h] — NOT live-tuned yet, eyeballed from one boss-floor
+  # screenshot; recalibrate with tools/pick_coordinate.py if it's missing
+  # or false-triggering.
+  ocr_region: [560, 0, 1440, 90]
+  ocr_keyword: "BOSS"
+  teleport_spam_interval_seconds: 0.3
+  required_clears: 2
+  # Safety cap so a genuinely stuck read (OCR never seeing "BOSS" go away,
+  # or Tesseract missing entirely) can't spam-teleport forever.
+  max_wait_seconds: 300.0
 
 teleport_to_hero:
   # Runs on a fixed interval any time no door is on screen — i.e. whenever

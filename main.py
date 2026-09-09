@@ -128,6 +128,9 @@ def _apply_resolution_profile(config: dict) -> None:
             "door_detection": {
                 "search_region": [round(v * scale) for v in config["door_detection"]["search_region"]],
             },
+            "boss_floor": {
+                "ocr_region": [round(v * scale) for v in config["boss_floor"]["ocr_region"]],
+            },
         }
 
     if profile:
