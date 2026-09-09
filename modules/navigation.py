@@ -84,6 +84,12 @@ class DoorNavigator:
         self.click_to_move_first_person = mv.get("click_to_move_first_person", True)
         self.click_to_move_zoom_in_clicks = mv.get("click_to_move_zoom_in_clicks", 15)
         self._first_person_set = False
+        # User-requested (2026-09-09): keep re-clicking the door target on
+        # this interval and don't give up after one retry — wait for the
+        # actual floor change, up to this total cap as a last-resort safety
+        # limit (not a normal stopping point).
+        self.click_to_move_reclick_interval_seconds = mv.get("click_to_move_reclick_interval_seconds", 1.5)
+        self.click_to_move_max_total_seconds = mv.get("click_to_move_max_total_seconds", 15.0)
         fwd_pt = mv.get("click_to_move_forward_click_point", [0.5, 0.55])
         self._forward_click_fx, self._forward_click_fy = fwd_pt[0], fwd_pt[1]
         self.interact_key = mv.get("interact_key")
@@ -732,32 +738,40 @@ class DoorNavigator:
         self._first_person_set = True
 
     def _approach_and_enter_clickmove(self, match: vision.Match, door_type: str | None) -> None:
-        """Click-to-move variant of approach_and_enter (2026-09-09). Two
-        corrections from live user feedback the same day: (1) the move
-        button is RIGHT-click here, not left (click_to_move_button); (2)
-        the character has to already be roughly facing a direction to walk
-        that way, unlike a pure NavMesh-pathfind-anywhere click-to-move —
-        _ensure_first_person locks the camera to first-person once so
-        screen-center reliably matches actual facing direction, which a
-        free third-person camera can't guarantee. Clicks the door's
-        approximate ground point once (see click_to_move_ground_offset_fraction)
-        and lets Roblox walk there, then re-uses the same floor-region
-        pixel-diff confirmation loop approach_and_enter's WASD path uses.
-        Requires click-to-move enabled in Roblox's own settings
-        (user-confirmed on, 2026-09-09); set movement.click_to_move: false
-        to fall back to the WASD path if not."""
+        """Click-to-move variant of approach_and_enter (2026-09-09, revised
+        after live testing the same day). Corrections from live user
+        feedback: (1) the move button is RIGHT-click here, not left
+        (click_to_move_button); (2) the character has to already be facing
+        the door to walk there, so this now turns the CAMERA to center the
+        door first via the same local pixel-offset alignment loop the WASD
+        path uses (_align_locally), THEN clicks — not skipping alignment
+        entirely as the first click-to-move version did; (3) right-click-to-
+        move accepts a click directly on the door itself
+        (click_to_move_click_on_door), no ground-offset guess needed; (4)
+        once the initial click is sent, keeps re-clicking the same target on
+        an interval and does NOT give up after one retry — it keeps going
+        until the "Floor: N" HUD text actually changes (bounded by
+        click_to_move_max_total_seconds as a last-resort safety cap, not a
+        normal stopping point). Requires click-to-move enabled in Roblox's
+        own settings (user-confirmed on, 2026-09-09); set
+        movement.click_to_move: false to fall back to the pure-WASD path."""
         self._ensure_first_person()
 
-        if not door_type:
+        if door_type:
+            self._align_locally(door_type, match)
+            aligned = self.last_chosen_match or match
+        else:
             self.logger.warning("approach_and_enter called with no known door type — clicking last-known position anyway.")
-        cx, cy = match.center
+            aligned = match
+
+        cx, cy = aligned.center
         if self.click_to_move_click_on_door:
             # User-confirmed 2026-09-09: right-click-to-move accepts a click
             # directly on the door itself — no need to guess an offset
             # ground point below it.
             target = (int(cx), int(cy))
         else:
-            ground_y = cy + match.h * self.click_to_move_ground_offset_fraction
+            ground_y = cy + aligned.h * self.click_to_move_ground_offset_fraction
             ground_y = max(ground_y, self.frame_h * self.click_to_move_ground_min_fraction)
             ground_y = min(ground_y, self.frame_h * 0.6)
             target = (int(cx), int(ground_y))
@@ -774,33 +788,18 @@ class DoorNavigator:
         if floor_crop_before is None:
             return
 
-        # Waits and re-checks the "Floor: N" crop, same as the WASD path —
-        # but critically does NOT click anywhere else while waiting.
-        # Clicking a generic unrelated forward point every tick (the
-        # original version) issues a brand new click-to-move command each
-        # time, which INTERRUPTS whatever path is already in progress — if
-        # click_to_move_arrival_wait_seconds wasn't long enough for a
-        # farther-away door, that redirect fired before the character ever
-        # actually reached it, sending it off toward the generic point
-        # instead and never entering the door at all (live-observed
-        # 2026-09-09: closer "combat" doors confirmed fine, farther "elite"
-        # doors never registered a floor change, 3 attempts in a row).
-        #
-        # If there's still no change halfway through the budget, retry once
-        # — but NOT at the exact same point. Live debug screenshots
-        # (2026-09-09) showed the doors sit on a raised platform at the
-        # arena's edge, with the actual lit walkable floor more centered;
-        # clicking straight down from a door near the screen edge can land
-        # just past the floor's edge into unwalkable space (confirmed: the
-        # same door type failed at x=524, then succeeded at x=583 on the
-        # very next detection — a 59px difference in x was the difference
-        # between failure and success). The retry click is nudged partway
-        # toward screen-center at the same y, more likely to land on lit
-        # floor than repeating the identical point.
+        # Keep going until the floor actually changes — per explicit
+        # request, not a single click-then-give-up. Periodically re-clicks
+        # the SAME target (click-to-move can idle once it reaches the
+        # clicked point even if that point turned out to be short of
+        # actually crossing into the next room) rather than stopping after
+        # one retry. click_to_move_max_total_seconds is a last-resort safety
+        # cap so a genuinely stuck cycle (e.g. floor_region misconfigured)
+        # can't loop forever, not a normal stopping point.
         walked = 0.0
         reached_new_floor = False
-        reclicked = False
-        while walked < self.walk_to_center_max_seconds:
+        next_reclick = self.click_to_move_reclick_interval_seconds
+        while walked < self.click_to_move_max_total_seconds:
             time.sleep(self.walk_to_center_step_seconds)
             walked += self.walk_to_center_step_seconds
             floor_crop_now = self._floor_region_crop(self._grab_frame())
@@ -808,12 +807,10 @@ class DoorNavigator:
                 self.logger.info("Floor number changed — walking to platform center.")
                 reached_new_floor = True
                 break
-            if not reclicked and walked >= self.walk_to_center_max_seconds / 2:
-                retry_x = int(target[0] + (self.frame_w / 2 - target[0]) * 0.5)
-                retry_target = (retry_x, target[1])
-                self.logger.info("No floor change yet — retrying '%s' closer to center at %s.", door_type, retry_target)
-                input_sim.click_at(*retry_target, button=self.click_to_move_button)
-                reclicked = True
+            if walked >= next_reclick:
+                self.logger.info("Still no floor change — re-clicking '%s' target at %s.", door_type, target)
+                input_sim.click_at(*target, button=self.click_to_move_button)
+                next_reclick += self.click_to_move_reclick_interval_seconds
 
         self.self_tuner.record_walk_confirm_result(reached_new_floor)
 
@@ -822,8 +819,8 @@ class DoorNavigator:
             time.sleep(self.walk_to_center_extra_seconds)
         else:
             self.logger.info(
-                "Floor number didn't change within %.1fs of extra walking — stopping here to be safe.",
-                self.walk_to_center_max_seconds,
+                "Floor number still hadn't changed after %.1fs — stopping here to be safe.",
+                self.click_to_move_max_total_seconds,
             )
 
     def approach_and_enter(self, match: vision.Match) -> None:

@@ -257,6 +257,13 @@ movement:
   # computed-ground-point approach if clicking the door directly stops
   # working for some floor layout.
   click_to_move_click_on_door: true
+  # User-requested (2026-09-09): keep re-clicking the door target on this
+  # interval instead of giving up after one retry — waits for the actual
+  # "Floor: N" change, not a fixed short timeout. max_total_seconds is a
+  # last-resort safety cap (not a normal stopping point) so a genuinely
+  # stuck cycle can't loop forever.
+  click_to_move_reclick_interval_seconds: 1.5
+  click_to_move_max_total_seconds: 15.0
   # User-confirmed 2026-09-09: the character has to already be roughly
   # facing a direction to walk that way — first-person keeps screen-center
   # aligned with actual facing, unlike a free third-person camera. Locked
