@@ -8,14 +8,18 @@ This is the validated logic from earlier testing:
   constantly).
 - Priority ranking with per-type threshold overrides (a generic-shaped icon
   can false-match more than a distinctive one).
-- WASD moves the character and is the primary way to approach a visible
-  door (strafe + forward curves the path toward it); arrow-key camera
-  turning is a fallback used only by scan_tick to look around for a door
-  that isn't in view at all. Up/Down arrows are never used for forward/
-  back — they drift camera pitch downward with repeated use.
+- Click-to-move (2026-09-09, movement.click_to_move) is now the primary way
+  to approach a visible door: click its approximate ground point and let
+  Roblox's own pathfinding walk there — no camera alignment needed at all,
+  since a click's target doesn't depend on which way the camera currently
+  faces. Falls back to a WASD camera-align-then-hold-forward approach
+  (movement.click_to_move: false) if click-to-move isn't enabled in-game.
+- Camera turning (arrow keys or mouse-drag) is used only by scan_tick, a
+  bounded, stationary multi-direction sweep to look around for a door
+  that isn't in view at all — it never walks forward while turning, to
+  avoid blindly running into obstacles while searching.
 - A focus-guarantee click before every movement action, since Windows
   blocks external processes from forcing foreground focus on demand.
-- A bounded scan sweep (not continuous) while waiting for a door to appear.
 """
 
 from __future__ import annotations
@@ -49,6 +53,14 @@ class DoorNavigator:
         # arrow-key binding. "keys" falls back to camera_turn_keys above.
         self.camera_turn_method = mv.get("camera_turn_method", "mouse")
         self.camera_drag_pixels = mv.get("camera_drag_pixels", 400)
+        # Click-to-move (2026-09-09) — see config.yaml's movement.click_to_move
+        # comment. Skips camera alignment entirely: click the door's ground
+        # point, let Roblox's own pathfinding walk there.
+        self.click_to_move = mv.get("click_to_move", True)
+        self.click_to_move_ground_offset_fraction = mv.get("click_to_move_ground_offset_fraction", 0.35)
+        self.click_to_move_arrival_wait_seconds = mv.get("click_to_move_arrival_wait_seconds", 2.0)
+        fwd_pt = mv.get("click_to_move_forward_click_point", [0.5, 0.55])
+        self._forward_click_fx, self._forward_click_fy = fwd_pt[0], fwd_pt[1]
         self.interact_key = mv.get("interact_key")
         self.turn_seconds = mv.get("turn_seconds", 0.4)
         # approach_and_enter's alignment loop: how long each camera-turn
@@ -69,7 +81,9 @@ class DoorNavigator:
         self.walk_to_center_step_seconds = mv.get("walk_to_center_step_seconds", 0.5)
         self.walk_to_center_max_seconds = mv.get("walk_to_center_max_seconds", 8.0)
         self.walk_to_center_extra_seconds = mv.get("walk_to_center_extra_seconds", 1.5)
-        self.scan_tick_seconds = mv.get("scan_tick_seconds", 0.3)
+        self.scan_sweep_directions = mv.get("scan_sweep_directions", 4)
+        self.scan_sweep_turn_seconds = mv.get("scan_sweep_turn_seconds", 0.5)
+        self.scan_sweep_pause_seconds = mv.get("scan_sweep_pause_seconds", 0.3)
 
         # Jumping only happens once, right after walking through a door.
         jump_cfg = config.get("auto_jump", {})
@@ -664,6 +678,73 @@ class DoorNavigator:
         self.logger.info("Alignment attempts exhausted for '%s' — proceeding anyway.", door_type)
         return False
 
+    def _click_walk_forward(self) -> None:
+        """Clicks the fixed near-bottom-center screen point (see
+        click_to_move_forward_click_point) to nudge further forward via
+        click-to-move — almost always walkable ground directly in front of
+        wherever the character currently is, regardless of which door was
+        just walked to."""
+        fx = int(self.frame_w * self._forward_click_fx)
+        fy = int(self.frame_h * self._forward_click_fy)
+        input_sim.click_at(fx, fy)
+
+    def _approach_and_enter_clickmove(self, match: vision.Match, door_type: str | None) -> None:
+        """Click-to-move variant of approach_and_enter (2026-09-09) — no
+        camera alignment needed at all, since a click's target doesn't
+        depend on which way the camera currently faces, only where on
+        screen the door actually is. Clicks the door's approximate ground
+        point once (see click_to_move_ground_offset_fraction) and lets
+        Roblox's own pathfinding walk there, then re-uses the same
+        floor-region pixel-diff confirmation loop approach_and_enter's WASD
+        path uses — just clicking a fixed forward ground point each step
+        instead of holding the forward key. Requires click-to-move enabled
+        in Roblox's own settings (user-confirmed on, 2026-09-09); set
+        movement.click_to_move: false to fall back to the WASD path if not."""
+        if door_type:
+            cx, cy = match.center
+            ground_y = min(cy + match.h * self.click_to_move_ground_offset_fraction, self.frame_h * 0.6)
+            self.logger.info(
+                "Click-to-move: walking to '%s' at (%d, %d).", door_type, int(cx), int(ground_y)
+            )
+        else:
+            self.logger.warning("approach_and_enter called with no known door type — clicking last-known position anyway.")
+            cx, cy = match.center
+            ground_y = min(cy + match.h * self.click_to_move_ground_offset_fraction, self.frame_h * 0.6)
+        input_sim.click_at(int(cx), int(ground_y))
+        time.sleep(self.click_to_move_arrival_wait_seconds)
+
+        if self.jump_key:
+            input_sim.tap_key(self.jump_key, self.jump_hold_seconds)
+        if self.interact_key:
+            input_sim.tap_key(self.interact_key)
+
+        floor_crop_before = self._floor_region_crop(self._grab_frame())
+        if floor_crop_before is None:
+            return
+
+        walked = 0.0
+        reached_new_floor = False
+        while walked < self.walk_to_center_max_seconds:
+            self._click_walk_forward()
+            time.sleep(self.walk_to_center_step_seconds)
+            walked += self.walk_to_center_step_seconds
+            floor_crop_now = self._floor_region_crop(self._grab_frame())
+            if vision.mean_pixel_diff(floor_crop_before, floor_crop_now) > 1.0:
+                self.logger.info("Floor number changed — walking to platform center.")
+                reached_new_floor = True
+                break
+
+        self.self_tuner.record_walk_confirm_result(reached_new_floor)
+
+        if reached_new_floor:
+            self._click_walk_forward()
+            time.sleep(self.walk_to_center_extra_seconds)
+        else:
+            self.logger.info(
+                "Floor number didn't change within %.1fs of extra walking — stopping here to be safe.",
+                self.walk_to_center_max_seconds,
+            )
+
     def approach_and_enter(self, match: vision.Match) -> None:
         """Turns the CAMERA (arrow keys) to actually face the door dead
         center before walking — not a single fixed-duration strafe guess
@@ -688,8 +769,17 @@ class DoorNavigator:
         the halving-step logic reacts to it, instead of politely
         continuing to say "left" while the door sails past center. This
         directly matches what was reported live: "it moves the camera off
-        target... instead of on the door.\""""
+        target... instead of on the door.\"
+
+        Click-to-move (2026-09-09): if movement.click_to_move is enabled
+        (the default now that click-to-move is confirmed on in-game), this
+        whole camera-alignment approach is skipped entirely — see
+        _approach_and_enter_clickmove."""
         self._ensure_game_focus()
+
+        if self.click_to_move:
+            self._approach_and_enter_clickmove(match, self.last_match_name)
+            return
 
         door_type = self.last_match_name
         if not door_type:
@@ -746,26 +836,30 @@ class DoorNavigator:
                 )
 
     def scan_tick(self) -> None:
-        """Fallback only: walks forward while turning the CAMERA (not A/D)
-        so the view actually reorients to look around for a door that isn't
-        in view at all — used while waiting/searching, never during
-        approach_and_enter (which is WASD-only). Camera turn is a right-
-        click-drag by default (camera_turn_method: "mouse") since that's
-        Roblox's native camera control; set to "keys" to use the arrow-key
-        binding instead."""
+        """Fallback only: bounded, STATIONARY look-around sweep (2026-09-09
+        rewrite) — turns the CAMERA (never A/D, never forward) in
+        scan_sweep_directions quick steps, checking for a door after each
+        one and returning the instant it appears rather than always
+        completing the full sweep. Walking forward while blindly turning
+        (the old behavior) risked running into obstacles while searching;
+        this only walks once a door is actually found and approach_and_enter
+        takes over. Used while waiting/searching, never during
+        approach_and_enter itself. Camera turn is a right-click-drag by
+        default (camera_turn_method: "mouse") since that's Roblox's native
+        camera control; set to "keys" to use the arrow-key binding instead."""
         self._ensure_game_focus()
-        input_sim.key_down(self.forward_key)
-        try:
+        for step in range(self.scan_sweep_directions):
             if self.camera_turn_method == "mouse":
-                input_sim.drag_camera(self.camera_drag_pixels, self.scan_tick_seconds)
+                input_sim.drag_camera(self.camera_drag_pixels, self.scan_sweep_turn_seconds)
             else:
-                input_sim.key_down(self.camera_right_key)
-                try:
-                    time.sleep(self.scan_tick_seconds)
-                finally:
-                    input_sim.key_up(self.camera_right_key)
-        finally:
-            input_sim.key_up(self.forward_key)
+                input_sim.tap_key(self.camera_right_key, self.scan_sweep_turn_seconds)
+            time.sleep(self.scan_sweep_pause_seconds)
+            if self.detect_door(self._grab_frame()) is not None:
+                self.logger.info(
+                    "Scan sweep found '%s' after %d/%d turn(s).",
+                    self.last_match_name, step + 1, self.scan_sweep_directions,
+                )
+                return
 
     def stop_all_movement(self) -> None:
         input_sim.release_all(

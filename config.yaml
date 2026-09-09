@@ -226,6 +226,33 @@ movement:
   # binding above was less reliable), or "keys" to use camera_turn_keys.
   camera_turn_method: "keys"
   camera_drag_pixels: 400
+  # Click-to-move (2026-09-09): with click-to-move enabled in Roblox's own
+  # settings, walking to a door no longer needs camera alignment at all — a
+  # click's target doesn't depend on which way the camera currently faces,
+  # only where on screen the door actually is. approach_and_enter clicks the
+  # door's approximate ground point directly and lets Roblox's own
+  # pathfinding walk there, skipping the whole align-camera-then-hold-
+  # forward sequence below entirely. Set to false to fall back to that
+  # original WASD approach (e.g. if click-to-move isn't enabled in-game).
+  click_to_move: true
+  # The door badge icon itself often isn't on walkable ground (it's mounted
+  # on/above the archway) — clicking this far below its on-screen center,
+  # as a fraction of the icon's own on-screen height, aims closer to the
+  # actual floor in front of the door. NOT live-tuned yet — adjust if
+  # clicks land on the wall/archway above the floor instead of on it.
+  click_to_move_ground_offset_fraction: 0.35
+  # How long to wait after the initial click-to-move click before assuming
+  # the character has arrived (or is very close) and starting the forward-
+  # nudge/floor-change-check loop below.
+  click_to_move_arrival_wait_seconds: 2.0
+  # Fixed screen point (fraction of frame width/height) clicked repeatedly
+  # during the forward-nudge loop once near the door — near-bottom-center
+  # is almost always walkable ground directly in front of wherever the
+  # character ends up, regardless of which door was walked to. Keep the y
+  # fraction above ~0.6 to stay clear of the bottom hero-portrait/teleport-
+  # button HUD row (door_detection.search_region excludes y>900 of 1440,
+  # i.e. above ~0.625, for the same reason).
+  click_to_move_forward_click_point: [0.5, 0.55]
   jump_key: "space"
   # Doors here are opened just by walking into them — no interact key needed.
   interact_key:
@@ -276,13 +303,19 @@ movement:
   walk_to_center_step_seconds: 0.5
   walk_to_center_max_seconds: 2.0
   walk_to_center_extra_seconds: 1.0
-  # While waiting for a door (teleporting-to-hero, no door in view yet),
-  # holds forward + camera-turn-right together for this long each tick,
-  # right after each teleport — a slow partial camera sweep so it eventually
-  # sees every door in the room. Deliberately bounded to once per teleport
-  # (not continuous), so a long boss fight doesn't turn into wandering in
-  # circles the whole time.
-  scan_tick_seconds: 0.3
+  # While waiting for a door (teleporting-to-hero, no door in view yet):
+  # scan_tick does a bounded, STATIONARY camera sweep (no forward walking —
+  # walking blind while turning risked running into obstacles) of this many
+  # quick turns, checking for a door after each one and stopping the
+  # instant it appears rather than always doing the full sweep. 4 covers
+  # roughly all the way around in 90-degree-ish steps, so a door that's
+  # simply behind the character gets found in one scan_tick call instead of
+  # needing several teleport-cycle calls to slowly rotate into view.
+  scan_sweep_directions: 4
+  scan_sweep_turn_seconds: 0.5
+  # Pause after each turn before the door-detection check, so the frame
+  # isn't grabbed mid-camera-motion (motion blur / half-rotated view).
+  scan_sweep_pause_seconds: 0.3
 
 auto_jump:
   # Jumping happens once, right after walking through a door.
