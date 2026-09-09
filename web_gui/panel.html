@@ -18,7 +18,7 @@
   }
   * { box-sizing: border-box; }
   html, body {
-    margin: 0; height: 100%; overflow: hidden;
+    margin: 0; width: 800px; height: 600px; overflow: hidden;
     font-family: "Segoe UI", sans-serif;
     color: var(--fg);
     background: var(--bg) no-repeat center center;
@@ -31,13 +31,14 @@
     filter: brightness(0.6);
     z-index: -1;
   }
-  #shell { display: flex; flex-direction: column; height: 100%; padding: 16px 18px; }
 
-  #header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-  #mascot { width: 56px; height: 68px; flex-shrink: 0; }
+  #shell { display: flex; flex-direction: column; height: 100%; padding: 14px 16px; }
+
+  #header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-shrink: 0; }
+  #mascot { width: 48px; height: 60px; flex-shrink: 0; }
   #title-col { flex: 1; min-width: 0; }
   #title-col h1 {
-    margin: 0; font-size: 21px; font-family: "Segoe Print", "Segoe UI", sans-serif;
+    margin: 0; font-size: 20px; font-family: "Segoe Print", "Segoe UI", sans-serif;
     color: var(--purple-bright); font-weight: 700;
   }
   #title-col p { margin: 0; font-size: 11px; color: var(--muted); }
@@ -51,27 +52,79 @@
     background: var(--panel-solid); border: 1px solid var(--purple); color: var(--fg);
     border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-size: 13px;
     display: flex; align-items: center; justify-content: center;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
-  .tool-btn:hover { background: var(--purple); }
+  .tool-btn:hover { background: var(--purple); transform: scale(1.1); box-shadow: 0 0 10px var(--purple); }
 
-  #tabbar { display: flex; gap: 4px; margin-bottom: 10px; }
-  .tab-btn {
-    flex: 1; padding: 8px 4px; border: none; border-radius: 8px; cursor: pointer;
-    background: rgba(28, 14, 43, 0.6); color: var(--muted); font-weight: 700; font-size: 12px;
-  }
-  .tab-btn.active { background: var(--purple); color: white; }
+  /* -- main two-column body: sidebar left, swipeable content right -- */
+  #body-row { flex: 1; display: flex; gap: 14px; min-height: 0; }
 
-  #content {
-    flex: 1; overflow-y: auto; background: var(--panel);
-    backdrop-filter: blur(10px); border-radius: 14px; border: 1px solid rgba(255,255,255,0.12);
-    padding: 16px; display: flex; flex-direction: column;
+  #sidebar {
+    width: 180px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;
   }
-  .tab-pane { display: none; flex-direction: column; flex: 1; min-height: 0; }
-  .tab-pane.active { display: flex; }
+  .side-btn {
+    position: relative;
+    background: rgba(28, 14, 43, 0.65);
+    border: 1px solid rgba(162, 89, 255, 0.35);
+    color: var(--muted);
+    border-radius: 14px;
+    padding: 16px 14px;
+    font-weight: 700;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    transition: transform 0.18s cubic-bezier(.34,1.56,.64,1), box-shadow 0.25s ease, color 0.2s ease, background 0.2s ease;
+    animation: bubble-idle 4s ease-in-out infinite;
+  }
+  .side-btn:nth-child(2) { animation-delay: -1s; }
+  .side-btn:nth-child(3) { animation-delay: -2s; }
+  .side-btn:nth-child(4) { animation-delay: -3s; }
+  @keyframes bubble-idle {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  .side-btn:hover {
+    color: var(--fg);
+    background: rgba(58, 33, 88, 0.85);
+    transform: translateY(-4px) scale(1.04);
+    box-shadow: 0 0 18px rgba(162, 89, 255, 0.65), 0 0 4px rgba(197, 139, 255, 0.9);
+    animation-play-state: paused;
+  }
+  .side-btn.active {
+    color: white;
+    background: linear-gradient(135deg, var(--purple), #7a2fe0);
+    box-shadow: 0 0 22px rgba(162, 89, 255, 0.8);
+    animation-play-state: paused;
+  }
+  .side-btn .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent-stop); margin-right: 8px; transition: background 0.2s ease;
+  }
+  .side-btn .dot.on { background: var(--accent-run); box-shadow: 0 0 8px var(--accent-run); }
+
+  #content-wrap {
+    flex: 1; min-width: 0; position: relative; overflow: hidden;
+    background: var(--panel); backdrop-filter: blur(10px);
+    border-radius: 16px; border: 1px solid rgba(255,255,255,0.12);
+  }
+  #content { position: relative; width: 100%; height: 100%; }
+
+  .tab-pane {
+    position: absolute; inset: 0; padding: 18px; display: flex; flex-direction: column;
+    overflow-y: auto;
+    transform: translateX(0); opacity: 1;
+    transition: transform 0.32s cubic-bezier(.22,.68,.35,1.01), opacity 0.28s ease;
+    pointer-events: none;
+  }
+  .tab-pane.active { pointer-events: auto; z-index: 2; }
+  .tab-pane.swipe-out-left { transform: translateX(-40px); opacity: 0; }
+  .tab-pane.swipe-in-right { transform: translateX(40px); opacity: 0; z-index: 2; pointer-events: auto; }
+  .tab-pane.hidden-pane { display: none; }
 
   .status-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 6px 0 14px; }
   .status-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent-stop); }
-  .status-dot.on { background: var(--accent-run); }
+  .status-dot.on { background: var(--accent-run); box-shadow: 0 0 8px var(--accent-run); }
   .status-text { font-weight: 700; font-size: 15px; color: var(--accent-stop); text-align: center; }
   .status-text.on { color: var(--accent-run); }
 
@@ -79,11 +132,16 @@
   button.action {
     border: none; border-radius: 10px; padding: 10px 18px; font-weight: 700; cursor: pointer;
     font-size: 13px; color: #0a2e17;
+    transition: transform 0.15s cubic-bezier(.34,1.56,.64,1), box-shadow 0.15s ease, filter 0.15s ease;
   }
   button.action.run { background: var(--accent-run); }
   button.action.stop { background: var(--accent-stop); color: #3a0a0a; }
   button.action.pause { background: var(--accent-pause); color: #3a2600; }
-  button.action:hover { filter: brightness(1.1); }
+  button.action:hover { filter: brightness(1.1); transform: translateY(-2px) scale(1.05); }
+  button.action.run:hover { box-shadow: 0 0 16px var(--accent-run); }
+  button.action.stop:hover { box-shadow: 0 0 16px var(--accent-stop); }
+  button.action.pause:hover { box-shadow: 0 0 16px var(--accent-pause); }
+  button.action:active { transform: translateY(0) scale(0.97); }
 
   .hint { text-align: center; font-size: 11px; color: var(--muted); margin: 2px 0; }
 
@@ -91,7 +149,9 @@
   .rebind-btn {
     background: var(--panel-solid); color: var(--fg); border: none; border-radius: 6px;
     padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
+  .rebind-btn:hover { transform: scale(1.06); box-shadow: 0 0 10px var(--purple); }
 
   .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
   .stat-cell {
@@ -145,74 +205,78 @@
     </div>
   </div>
 
-  <div id="tabbar">
-    <button class="tab-btn active" data-tab="story">Story</button>
-    <button class="tab-btn" data-tab="towers">Towers</button>
-    <button class="tab-btn" data-tab="pvp">PvP</button>
-    <button class="tab-btn" data-tab="autoclicker">Auto Clicker</button>
-  </div>
-
-  <div id="content">
-    <!-- Story -->
-    <div class="tab-pane active" id="tab-story">
-      <div class="status-row"><div class="status-dot" id="story-dot"></div><div class="status-text" id="story-status">STOPPED</div></div>
-      <div class="btn-row">
-        <button class="action run" onclick="api.start_story()">▶ Start</button>
-        <button class="action stop" onclick="api.stop_story()">■ Stop</button>
-      </div>
-      <div class="hint" id="story-hotkey">Hotkeys: F6 start · F7 stop</div>
-      <div class="hint" id="story-desc">Clicks teleport-to-hero every 2.5s while running.</div>
+  <div id="body-row">
+    <div id="sidebar">
+      <button class="side-btn active" data-tab="story"><span class="dot" id="story-nav-dot"></span>Story</button>
+      <button class="side-btn" data-tab="towers"><span class="dot" id="towers-nav-dot"></span>Towers</button>
+      <button class="side-btn" data-tab="pvp"><span class="dot" id="pvp-nav-dot"></span>PvP</button>
+      <button class="side-btn" data-tab="autoclicker"><span class="dot" id="ac-nav-dot"></span>Auto Clicker</button>
     </div>
 
-    <!-- Towers -->
-    <div class="tab-pane" id="tab-towers">
-      <div class="status-text" id="towers-status" style="margin:6px 0 14px;">AUTOMATION PAUSED</div>
-      <div class="btn-row">
-        <button class="action run" onclick="api.start_towers()">▶ Start / Resume</button>
-        <button class="action pause" onclick="api.pause_towers()">⏸ Pause</button>
-        <button class="action stop" onclick="api.estop_towers()">⛔ Emergency Stop</button>
-      </div>
-      <div class="hint" id="towers-hotkey">Hotkey: F8 = toggle enable/pause</div>
-      <div class="stat-grid">
-        <div class="stat-cell"><div class="val" id="stat-runtime">00:00</div><div class="cap">Runtime</div></div>
-        <div class="stat-cell"><div class="val" id="stat-doors">0</div><div class="cap">Doors Detected</div></div>
-        <div class="stat-cell"><div class="val" id="stat-movements">0</div><div class="cap">Movements</div></div>
-        <div class="stat-cell"><div class="val" id="stat-teleports">0</div><div class="cap">Teleports</div></div>
-        <div class="stat-cell"><div class="val" id="stat-recoveries">0</div><div class="cap">Recovery Events</div></div>
-      </div>
-      <div class="log-label">Activity Log</div>
-      <div class="log-box" id="towers-log"></div>
-    </div>
+    <div id="content-wrap">
+      <div id="content">
+        <!-- Story -->
+        <div class="tab-pane active" id="tab-story">
+          <div class="status-row"><div class="status-dot" id="story-dot"></div><div class="status-text" id="story-status">STOPPED</div></div>
+          <div class="btn-row">
+            <button class="action run" onclick="api.start_story()">▶ Start</button>
+            <button class="action stop" onclick="api.stop_story()">■ Stop</button>
+          </div>
+          <div class="hint" id="story-hotkey">Hotkeys: F6 start · F7 stop</div>
+          <div class="hint" id="story-desc">Clicks teleport-to-hero every 2.5s while running.</div>
+        </div>
 
-    <!-- PvP -->
-    <div class="tab-pane" id="tab-pvp">
-      <div class="status-row"><div class="status-dot" id="pvp-dot"></div><div class="status-text" id="pvp-status">STOPPED</div></div>
-      <div class="btn-row">
-        <button class="action run" onclick="api.start_pvp()">▶ Start</button>
-        <button class="action stop" onclick="api.stop_pvp()">■ Stop</button>
-      </div>
-      <div class="hint" id="pvp-hotkey">Hotkey: P = toggle</div>
-      <div class="hint">Spam-clicks the Play Ranked button nonstop while running.</div>
-      <div class="click-cell"><div class="val" id="pvp-clicks">0</div><div class="cap">Clicks</div></div>
-      <div class="log-label">Activity Log</div>
-      <div class="log-box" id="pvp-log"></div>
-    </div>
+        <!-- Towers -->
+        <div class="tab-pane hidden-pane" id="tab-towers">
+          <div class="status-text" id="towers-status" style="margin:6px 0 14px;">AUTOMATION PAUSED</div>
+          <div class="btn-row">
+            <button class="action run" onclick="api.start_towers()">▶ Start / Resume</button>
+            <button class="action pause" onclick="api.pause_towers()">⏸ Pause</button>
+            <button class="action stop" onclick="api.estop_towers()">⛔ Emergency Stop</button>
+          </div>
+          <div class="hint" id="towers-hotkey">Hotkey: F8 = toggle enable/pause</div>
+          <div class="stat-grid">
+            <div class="stat-cell"><div class="val" id="stat-runtime">00:00</div><div class="cap">Runtime</div></div>
+            <div class="stat-cell"><div class="val" id="stat-doors">0</div><div class="cap">Doors Detected</div></div>
+            <div class="stat-cell"><div class="val" id="stat-movements">0</div><div class="cap">Movements</div></div>
+            <div class="stat-cell"><div class="val" id="stat-teleports">0</div><div class="cap">Teleports</div></div>
+            <div class="stat-cell"><div class="val" id="stat-recoveries">0</div><div class="cap">Recovery Events</div></div>
+          </div>
+          <div class="log-label">Activity Log</div>
+          <div class="log-box" id="towers-log"></div>
+        </div>
 
-    <!-- Auto Clicker -->
-    <div class="tab-pane" id="tab-autoclicker">
-      <div class="status-row"><div class="status-dot" id="ac-dot"></div><div class="status-text" id="ac-status">STOPPED</div></div>
-      <div class="btn-row">
-        <button class="action run" onclick="api.start_autoclicker()">▶ Start</button>
-        <button class="action stop" onclick="api.stop_autoclicker()">■ Stop</button>
+        <!-- PvP -->
+        <div class="tab-pane hidden-pane" id="tab-pvp">
+          <div class="status-row"><div class="status-dot" id="pvp-dot"></div><div class="status-text" id="pvp-status">STOPPED</div></div>
+          <div class="btn-row">
+            <button class="action run" onclick="api.start_pvp()">▶ Start</button>
+            <button class="action stop" onclick="api.stop_pvp()">■ Stop</button>
+          </div>
+          <div class="hint" id="pvp-hotkey">Hotkey: P = toggle</div>
+          <div class="hint">Spam-clicks the Play Ranked button nonstop while running.</div>
+          <div class="click-cell"><div class="val" id="pvp-clicks">0</div><div class="cap">Clicks</div></div>
+          <div class="log-label">Activity Log</div>
+          <div class="log-box" id="pvp-log"></div>
+        </div>
+
+        <!-- Auto Clicker -->
+        <div class="tab-pane hidden-pane" id="tab-autoclicker">
+          <div class="status-row"><div class="status-dot" id="ac-dot"></div><div class="status-text" id="ac-status">STOPPED</div></div>
+          <div class="btn-row">
+            <button class="action run" onclick="api.start_autoclicker()">▶ Start</button>
+            <button class="action stop" onclick="api.stop_autoclicker()">■ Stop</button>
+          </div>
+          <div class="rebind-row">
+            <span class="hint" id="ac-hotkey" style="margin:0;">Hotkey: C</span>
+            <button class="rebind-btn" id="ac-rebind-btn" onclick="startRebind()">Rebind</button>
+          </div>
+          <div class="hint">Clicks at the current cursor position nonstop while running — move the mouse where you want it clicking.</div>
+          <div class="click-cell"><div class="val" id="ac-clicks">0</div><div class="cap">Clicks</div></div>
+          <div class="log-label">Activity Log</div>
+          <div class="log-box" id="ac-log"></div>
+        </div>
       </div>
-      <div class="rebind-row">
-        <span class="hint" id="ac-hotkey" style="margin:0;">Hotkey: C</span>
-        <button class="rebind-btn" id="ac-rebind-btn" onclick="startRebind()">Rebind</button>
-      </div>
-      <div class="hint">Clicks at the current cursor position nonstop while running — move the mouse where you want it clicking.</div>
-      <div class="click-cell"><div class="val" id="ac-clicks">0</div><div class="cap">Clicks</div></div>
-      <div class="log-label">Activity Log</div>
-      <div class="log-box" id="ac-log"></div>
     </div>
   </div>
 </div>
@@ -220,6 +284,7 @@
 <script>
   let api = null;
   let rebinding = false;
+  let switching = false;
 
   window.addEventListener("pywebviewready", () => {
     api = window.pywebview.api;
@@ -227,7 +292,7 @@
   });
 
   function init() {
-    document.querySelectorAll(".tab-btn").forEach(btn => {
+    document.querySelectorAll(".side-btn").forEach(btn => {
       btn.addEventListener("click", () => showTab(btn.dataset.tab));
     });
     document.getElementById("bg-color-input").addEventListener("input", (e) => {
@@ -269,9 +334,60 @@
     document.getElementById("ac-hotkey").textContent = `Hotkey: ${hk.autoclicker}`;
   }
 
+  // Whole right side "swipes" to the new section: outgoing pane slides out
+  // to the left while fading, incoming pane slides in from the right.
   function showTab(name) {
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
-    document.querySelectorAll(".tab-pane").forEach(p => p.classList.toggle("active", p.id === "tab-" + name));
+    // Source of truth is the DOM itself (whichever pane currently has
+    // .active), not a separate JS variable — rapid clicking across tabs
+    // (confirmed live) could desync a tracked "activeTab" variable from
+    // reality if a click landed while the previous transition's
+    // setTimeout hadn't fired yet, leaving TWO panes marked .active at
+    // once (sidebar showing one tab, content showing another). Querying
+    // the DOM directly can't drift out of sync with itself.
+    if (switching) return;
+    const incoming = document.getElementById("tab-" + name);
+    const outgoing = document.querySelector(".tab-pane.active");
+    if (!incoming || incoming === outgoing) return;
+    switching = true;
+
+    document.querySelectorAll(".side-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+
+    incoming.classList.remove("hidden-pane");
+    incoming.classList.add("swipe-in-right");
+    // force layout so the starting transform actually applies before we
+    // transition away from it
+    incoming.offsetWidth;
+
+    if (outgoing) outgoing.classList.add("swipe-out-left");
+    incoming.classList.add("active");
+    incoming.classList.remove("swipe-in-right");
+
+    // cleanup must run EXACTLY once per call — confirmed live: without
+    // the done-guard/clearTimeout below, the transitionend listener AND
+    // the 400ms fallback could BOTH eventually fire for the same call.
+    // Harmless in isolation, but if a newer showTab() call had already
+    // started by the time this call's late/duplicate cleanup fired, its
+    // stale closure over THIS call's own "incoming" would hide the
+    // genuinely-active newer pane out from under it — reproduced live via
+    // rapid clicking as a permanently blank content pane with the sidebar
+    // still showing the (correct) newer tab highlighted.
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      clearTimeout(fallbackId);
+      // Defensive: guarantee exactly one pane ends up active/visible no
+      // matter what happened above, instead of trusting outgoing/incoming
+      // alone to still be correct by the time this runs.
+      document.querySelectorAll(".tab-pane").forEach(p => {
+        if (p === incoming) return;
+        p.classList.remove("active", "swipe-out-left", "swipe-in-right");
+        p.classList.add("hidden-pane");
+      });
+      switching = false;
+    };
+    incoming.addEventListener("transitionend", cleanup, { once: true });
+    const fallbackId = setTimeout(cleanup, 400); // fallback in case transitionend never fires
   }
 
   function appendLog(elId, lines) {
@@ -315,11 +431,13 @@
     api.get_state().then(s => {
       // Story
       document.getElementById("story-dot").classList.toggle("on", s.story_on);
+      document.getElementById("story-nav-dot").classList.toggle("on", s.story_on);
       const storyStatus = document.getElementById("story-status");
       storyStatus.textContent = s.story_on ? "RUNNING" : "STOPPED";
       storyStatus.classList.toggle("on", s.story_on);
 
       // Towers
+      document.getElementById("towers-nav-dot").classList.toggle("on", s.towers_on);
       document.getElementById("towers-status").textContent = s.towers_on ? "AUTOMATION ENABLED" : "AUTOMATION PAUSED";
       document.getElementById("towers-status").style.color = s.towers_on ? "var(--accent-run)" : "var(--accent-stop)";
       document.getElementById("stat-runtime").textContent = fmtTime(s.towers_stats.runtime);
@@ -331,6 +449,7 @@
 
       // PvP
       document.getElementById("pvp-dot").classList.toggle("on", s.pvp_on);
+      document.getElementById("pvp-nav-dot").classList.toggle("on", s.pvp_on);
       const pvpStatus = document.getElementById("pvp-status");
       pvpStatus.textContent = s.pvp_on ? "RUNNING" : "STOPPED";
       pvpStatus.classList.toggle("on", s.pvp_on);
@@ -339,6 +458,7 @@
 
       // Auto Clicker
       document.getElementById("ac-dot").classList.toggle("on", s.autoclicker_on);
+      document.getElementById("ac-nav-dot").classList.toggle("on", s.autoclicker_on);
       const acStatus = document.getElementById("ac-status");
       acStatus.textContent = s.autoclicker_on ? "RUNNING" : "STOPPED";
       acStatus.classList.toggle("on", s.autoclicker_on);

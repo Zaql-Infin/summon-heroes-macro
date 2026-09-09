@@ -158,12 +158,18 @@ class WebControlPanel:
         self._elo_photo = None
 
         # -- hidden Tk root, overlays only --
-        self._overlay_root = tk.Tk()
-        self._overlay_root.withdraw()
-        self._build_banner()
-        self._build_elo_overlay()
-        self._build_tracer_overlay()
-        self._overlay_root.after(0, self._poll_overlays)
+        # NOT created here — see run()'s comment for why: Tk must be
+        # created AND have its mainloop pumped on the exact same thread
+        # throughout its life (confirmed live: splitting the two raised
+        # "RuntimeError: main thread is not in main loop" the moment a
+        # worker thread called hide_overlays_for_capture), while pywebview
+        # separately refuses outright to run anywhere except the real
+        # process main thread (confirmed live: "WebViewException: pywebview
+        # must be run on a main thread."). Two hard, conflicting
+        # single-thread requirements — resolved by giving Tk its own
+        # dedicated thread for its entire lifecycle (created there, pumped
+        # there) and reserving the actual main thread for webview.start().
+        self._overlay_ready = threading.Event()
 
         # -- visible control panel, pywebview --
         hk = config["hotkeys"]
@@ -178,12 +184,12 @@ class WebControlPanel:
             "Summon Heroes Macro",
             url=_html_path(),
             js_api=self,
-            width=400,
-            height=640,
+            width=800,
+            height=600,
             x=60,
             y=60,
             on_top=True,
-            resizable=True,
+            resizable=False,
         )
 
     # -- backdrop image discovery / helpers -----------------------------------------
@@ -576,7 +582,30 @@ class WebControlPanel:
         self.on_close()
         self._overlay_root.after(0, self._overlay_root.quit)
 
+    def _run_overlay_thread(self) -> None:
+        """Tk's entire lifecycle — creation through mainloop — runs on this
+        one dedicated thread, never the real process main thread (that's
+        reserved for webview.start(), which refuses to run anywhere else).
+        See the comment on self._overlay_ready in __init__ for why this
+        split exists at all."""
+        self._overlay_root = tk.Tk()
+        self._overlay_root.withdraw()
+        self._build_banner()
+        self._build_elo_overlay()
+        self._build_tracer_overlay()
+        self._overlay_root.after(0, self._poll_overlays)
+        self._overlay_ready.set()
+        self._overlay_root.mainloop()
+
     def run(self) -> None:
-        threading.Thread(target=self._overlay_root.mainloop, daemon=True, name="OverlayTkLoop").start()
+        threading.Thread(target=self._run_overlay_thread, daemon=True, name="OverlayTkLoop").start()
+        # towers.py/story_campaign.py's hide_overlays_fn/show_overlays_fn
+        # get wired up to methods on this object immediately after
+        # construction (see main.py) — harmless if the underlying Tk
+        # objects don't exist yet at THAT point (nothing calls them until
+        # a mode actually starts), but wait here anyway so the overlay
+        # windows are guaranteed ready before the control panel (and thus
+        # the user) can possibly trigger anything that needs them.
+        self._overlay_ready.wait(timeout=5.0)
         self._webview_window.events.closed += self._handle_webview_closed
         webview.start()
