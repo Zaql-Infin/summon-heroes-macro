@@ -83,9 +83,62 @@ _relaunch_elevated_if_needed()
 from modules import vision, input_sim, hotkeys, logging_setup, web_gui, towers, story_campaign, pvp_spam, auto_clicker, version
 
 
+def _deep_update(target: dict, overrides: dict) -> None:
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _deep_update(target[key], value)
+        else:
+            target[key] = value
+
+
+def _apply_resolution_profile(config: dict) -> None:
+    """Overwrite the fixed-pixel-coordinate fields (teleport_button,
+    pvp_spam, overlay, door_detection.search_region) with the entry matching
+    screen.width from
+    resolution_profiles, so those modes work at resolutions other than the
+    2560x1440 the base values were calibrated at. See config.yaml's
+    resolution_profiles comment for the full explanation. A width with no
+    explicit profile falls back to proportionally scaling the base
+    (screen.width-keyed) values by screen.width / 2560 — an approximation,
+    not a calibrated set."""
+    profiles = config.get("resolution_profiles", {})
+    width = config["screen"]["width"]
+    reference_width = 2560
+
+    profile = profiles.get(width)
+    if profile is None and width != reference_width:
+        scale = width / reference_width
+        profile = {
+            "teleport_button": {
+                "fallback_coordinate": [
+                    round(config["teleport_button"]["fallback_coordinate"][0] * scale),
+                    round(config["teleport_button"]["fallback_coordinate"][1] * scale),
+                ]
+            },
+            "pvp_spam": {
+                "click_coordinate": [
+                    round(config["pvp_spam"]["click_coordinate"][0] * scale),
+                    round(config["pvp_spam"]["click_coordinate"][1] * scale),
+                ],
+                "elo_region": [round(v * scale) for v in config["pvp_spam"]["elo_region"]],
+            },
+            "overlay": {
+                "floor_region": [round(v * scale) for v in config["overlay"]["floor_region"]],
+            },
+            "door_detection": {
+                "search_region": [round(v * scale) for v in config["door_detection"]["search_region"]],
+            },
+        }
+
+    if profile:
+        _deep_update(config, profile)
+
+
 def load_config(path: str = "config.yaml") -> dict:
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+    _apply_resolution_profile(config)
+    return config
 
 
 class MacroApp:

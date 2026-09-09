@@ -15,6 +15,44 @@ screen:
   # Region of the screen that actually shows the game (x, y, w, h).
   game_region: [0, 0, 2560, 1440]
 
+# =============================================================================
+# Per-resolution coordinate overrides.
+#
+# teleport_button.fallback_coordinate, pvp_spam.click_coordinate,
+# pvp_spam.elo_region, overlay.floor_region and door_detection.search_region
+# below are all FIXED pixel coordinates calibrated by eye against a real
+# 2560x1440 capture — they
+# don't scale automatically just because screen.width/height change. This
+# table holds a directly-calibrated (or best-effort proportional) override
+# set for each known screen width; load_config() in main.py picks the
+# matching entry for screen.width and overwrites those fields with it before
+# anything else reads them.
+#
+# The "1920" entry below is a straight 0.75x proportional scale of the 2560
+# values (1920/2560 = 1080/1440 = 0.75 exactly, since both are 16:9) — NOT
+# yet live-verified against a real 1920x1080 Roblox capture. Roblox UI
+# elements mix Scale and Offset UDims per-element, so a uniform scale is only
+# an approximation (story_campaign.py's own 1920 calibration found real
+# per-element ratios ranging 0.65-0.83, not a flat 0.75). If a button gets
+# missed on a 1920x1080 screen, recalibrate the specific coordinate below
+# using tools/pick_coordinate.py against a live screenshot and it'll take
+# effect immediately, no code changes needed.
+#
+# A screen width with no entry here falls back to this same 0.75-style
+# proportional scale of the 2560 baseline, computed automatically.
+# =============================================================================
+resolution_profiles:
+  1920:
+    teleport_button:
+      fallback_coordinate: [1165, 1023]
+    pvp_spam:
+      click_coordinate: [150, 220]
+      elo_region: [139, 186, 113, 26]
+    overlay:
+      floor_region: [563, 74, 195, 49]
+    door_detection:
+      search_region: [0, 38, 1920, 638]
+
 gui:
   # Control panel background color — click the 🎨 swatch in the header to
   # change it live with a color picker; it's saved back here automatically.
