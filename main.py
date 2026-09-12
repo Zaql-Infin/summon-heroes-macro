@@ -103,43 +103,56 @@ def _deep_update(target: dict, overrides: dict) -> None:
 
 def _apply_resolution_profile(config: dict) -> None:
     """Overwrite the fixed-pixel-coordinate fields (teleport_button,
-    pvp_spam, overlay, door_detection.search_region) with the entry matching
-    screen.width from
-    resolution_profiles, so those modes work at resolutions other than the
-    2560x1440 the base values were calibrated at. See config.yaml's
-    resolution_profiles comment for the full explanation. A width with no
-    explicit profile falls back to proportionally scaling the base
-    (screen.width-keyed) values by screen.width / 2560 — an approximation,
-    not a calibrated set."""
+    pvp_spam, overlay, door_detection.search_region, boss_floor) with the
+    entry matching screen.width x screen.height from resolution_profiles,
+    so those modes work at resolutions other than the 2560x1440 the base
+    values were calibrated at. See config.yaml's resolution_profiles
+    comment for the full explanation.
+
+    Keyed by "WIDTHxHEIGHT", not width alone (2026-09-12) — 2560x1600
+    (16:10) shares its width with the 2560x1440 (16:9) base but is a
+    different aspect ratio, so a width-only key would wrongly treat it as
+    "no scaling needed" and reuse the 1440 baseline's y-coordinates
+    verbatim on a screen that's actually 160px taller.
+
+    A resolution with no explicit profile falls back to a proportional
+    scale: x/width-valued fields scale by screen.width/2560, y/height-valued
+    fields scale by screen.height/1440, applied independently — a flat
+    single-factor scale (the old behavior) is exactly wrong for any
+    non-16:9 resolution like 2560x1600's for the reasons above. Still just
+    an approximation, not a calibrated set."""
     profiles = config.get("resolution_profiles", {})
     width = config["screen"]["width"]
-    reference_width = 2560
+    height = config["screen"]["height"]
+    reference_width, reference_height = 2560, 1440
 
-    profile = profiles.get(width)
-    if profile is None and width != reference_width:
-        scale = width / reference_width
+    profile = profiles.get(f"{width}x{height}")
+    if profile is None and (width, height) != (reference_width, reference_height):
+        sx = width / reference_width
+        sy = height / reference_height
+
+        def scale_point(pt):
+            return [round(pt[0] * sx), round(pt[1] * sy)]
+
+        def scale_region(r):
+            return [round(r[0] * sx), round(r[1] * sy), round(r[2] * sx), round(r[3] * sy)]
+
         profile = {
             "teleport_button": {
-                "fallback_coordinate": [
-                    round(config["teleport_button"]["fallback_coordinate"][0] * scale),
-                    round(config["teleport_button"]["fallback_coordinate"][1] * scale),
-                ]
+                "fallback_coordinate": scale_point(config["teleport_button"]["fallback_coordinate"]),
             },
             "pvp_spam": {
-                "click_coordinate": [
-                    round(config["pvp_spam"]["click_coordinate"][0] * scale),
-                    round(config["pvp_spam"]["click_coordinate"][1] * scale),
-                ],
-                "elo_region": [round(v * scale) for v in config["pvp_spam"]["elo_region"]],
+                "click_coordinate": scale_point(config["pvp_spam"]["click_coordinate"]),
+                "elo_region": scale_region(config["pvp_spam"]["elo_region"]),
             },
             "overlay": {
-                "floor_region": [round(v * scale) for v in config["overlay"]["floor_region"]],
+                "floor_region": scale_region(config["overlay"]["floor_region"]),
             },
             "door_detection": {
-                "search_region": [round(v * scale) for v in config["door_detection"]["search_region"]],
+                "search_region": scale_region(config["door_detection"]["search_region"]),
             },
             "boss_floor": {
-                "ocr_region": [round(v * scale) for v in config["boss_floor"]["ocr_region"]],
+                "ocr_region": scale_region(config["boss_floor"]["ocr_region"]),
             },
         }
 

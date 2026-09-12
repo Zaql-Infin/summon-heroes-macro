@@ -19,30 +19,45 @@ screen:
 # Per-resolution coordinate overrides.
 #
 # teleport_button.fallback_coordinate, pvp_spam.click_coordinate,
-# pvp_spam.elo_region, overlay.floor_region and door_detection.search_region
-# below are all FIXED pixel coordinates calibrated by eye against a real
-# 2560x1440 capture — they
-# don't scale automatically just because screen.width/height change. This
-# table holds a directly-calibrated (or best-effort proportional) override
-# set for each known screen width; load_config() in main.py picks the
-# matching entry for screen.width and overwrites those fields with it before
+# pvp_spam.elo_region, overlay.floor_region, door_detection.search_region
+# and boss_floor.ocr_region below are all FIXED pixel coordinates calibrated
+# by eye against a real 2560x1440 capture — they don't scale automatically
+# just because screen.width/height change. This table holds a
+# directly-calibrated (or best-effort estimated) override set for each known
+# resolution, keyed "WIDTHxHEIGHT" (not width alone — see the 2560x1600 note
+# below for why); load_config() in main.py picks the matching entry for
+# screen.width x screen.height and overwrites those fields with it before
 # anything else reads them.
 #
-# The "1920" entry below is a straight 0.75x proportional scale of the 2560
+# The "1920x1080" entry is a straight 0.75x proportional scale of the 2560
 # values (1920/2560 = 1080/1440 = 0.75 exactly, since both are 16:9) — NOT
 # yet live-verified against a real 1920x1080 Roblox capture. Roblox UI
 # elements mix Scale and Offset UDims per-element, so a uniform scale is only
 # an approximation (story_campaign.py's own 1920 calibration found real
-# per-element ratios ranging 0.65-0.83, not a flat 0.75). If a button gets
-# missed on a 1920x1080 screen, recalibrate the specific coordinate below
-# using tools/pick_coordinate.py against a live screenshot and it'll take
-# effect immediately, no code changes needed.
+# per-element ratios ranging 0.65-0.83, not a flat 0.75).
 #
-# A screen width with no entry here falls back to this same 0.75-style
-# proportional scale of the 2560 baseline, computed automatically.
+# The "2560x1600" entry (2026-09-12, for a 16:10 Mac display) is NOT a
+# uniform scale — it shares its width with the 2560x1440 baseline, so x
+# stays identical, but it's 160px taller. Estimated per-element by treating
+# each coordinate as anchored to whichever screen edge it sits closest to
+# (a common UI pattern — a fixed pixel offset from a corner/edge, not a
+# proportional position) and preserving that edge distance: top-anchored
+# elements (pvp click, elo/floor-region HUD text, boss banner, and
+# search_region's top boundary) keep their y unchanged; bottom-anchored ones
+# (teleport button, search_region's bottom boundary — both near the
+# bottom-of-screen hero-portrait row) shift down by the full +160px height
+# difference. NOT live-verified at all — no 2560x1600 Roblox capture existed
+# to calibrate against, this is a reasoned estimate. Recalibrate with
+# tools/pick_coordinate.py against a real screenshot if anything's off.
+#
+# A resolution with no entry here falls back to scaling x-valued fields by
+# screen.width/2560 and y-valued fields by screen.height/1440 independently
+# (not a single flat factor — exactly wrong for a non-16:9 screen like
+# 2560x1600, which is why it has its own entry above instead of relying on
+# this), computed automatically.
 # =============================================================================
 resolution_profiles:
-  1920:
+  1920x1080:
     teleport_button:
       fallback_coordinate: [1165, 1023]
     pvp_spam:
@@ -54,6 +69,18 @@ resolution_profiles:
       search_region: [0, 38, 1920, 638]
     boss_floor:
       ocr_region: [420, 0, 1080, 68]
+  2560x1600:
+    teleport_button:
+      fallback_coordinate: [1553, 1524]
+    pvp_spam:
+      click_coordinate: [200, 293]
+      elo_region: [185, 248, 150, 34]
+    overlay:
+      floor_region: [750, 98, 260, 65]
+    door_detection:
+      search_region: [0, 50, 2560, 1010]
+    boss_floor:
+      ocr_region: [560, 0, 1440, 90]
 
 gui:
   # Control panel background color — click the 🎨 swatch in the header to
