@@ -306,7 +306,50 @@ class MacroApp:
         self.logger.info("Macro stopped cleanly.")
 
 
+def _print_macos_permission_status() -> None:
+    """macOS only. Printed straight to the terminal (not just the log
+    file) as the very first thing on startup, since a stuck-forever hotkey
+    or click is otherwise indistinguishable from "permissions are wrong"
+    vs. every other thing this app does — this answers that definitively
+    by asking the OS directly (see input_sim.macos_permission_status) instead
+    of relying on a System Settings toggle that can be out of sync with
+    what's actually granted. User-reported (2026-09-13): hotkeys still not
+    firing after following the setup steps, even with Input Monitoring
+    supposedly granted — this exists to stop guessing and just show the
+    real state."""
+    if not input_sim.IS_MACOS:
+        return
+    status = input_sim.macos_permission_status()
+    labels = {
+        "accessibility": "Accessibility",
+        "input_monitoring": "Input Monitoring",
+        "screen_recording": "Screen Recording",
+    }
+    print("\n--- macOS permission check (System Settings > Privacy & Security) ---")
+    all_ok = True
+    for key, label in labels.items():
+        val = status[key]
+        if val is True:
+            mark = "OK"
+        elif val is False:
+            mark = "MISSING"
+            all_ok = False
+        else:
+            mark = "UNKNOWN (couldn't check — is pyobjc-framework-Quartz installed?)"
+            all_ok = False
+        print(f"  [{mark}] {label}")
+    if not all_ok:
+        print(
+            "  -> Grant whatever's marked MISSING to Terminal (or your Python "
+            "binary) in System Settings, then fully quit and reopen Terminal — "
+            "the app WILL keep running with these missing, it just won't be "
+            "able to see the screen and/or send input/hotkeys."
+        )
+    print("---\n")
+
+
 def main() -> None:
+    _print_macos_permission_status()
     config = load_config()
     app = MacroApp(config)
     app.run()

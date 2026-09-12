@@ -64,8 +64,25 @@ def _relative_mouse_move(dx: int, dy: int) -> None:
     if IS_WINDOWS:
         ctypes.windll.user32.mouse_event(_MOUSEEVENTF_MOVE, int(dx), int(dy), 0, 0)
     elif IS_MACOS and Quartz is not None:
+        # BUG FIXED 2026-09-13 (found by re-reading the Quartz docs after a
+        # "nothing works at all" report — not something a live Mac would
+        # even have been needed to catch): CGEventCreateMouseEvent's third
+        # argument is an ABSOLUTE cursor position — posting a
+        # kCGEventMouseMoved event actually warps the cursor there, it's
+        # not just a label. The original code passed (0, 0), meaning every
+        # single "relative" move first snapped the real cursor to the
+        # screen's top-left corner before whatever delta got read — which
+        # would make aiming/clicking anywhere via move_to/click_at
+        # essentially random. Now reads the actual current position first
+        # (via pynput, already proven working) and posts current+delta as
+        # the absolute position, so the cursor visually moves to the
+        # correct place same as Windows' relative mouse_event — while
+        # still setting the delta fields explicitly for any game reading
+        # raw relative-motion input directly instead of absolute position.
+        cx, cy = _mouse.position
+        new_pos = (cx + dx, cy + dy)
         event = Quartz.CGEventCreateMouseEvent(
-            None, Quartz.kCGEventMouseMoved, (0, 0), Quartz.kCGMouseButtonLeft
+            None, Quartz.kCGEventMouseMoved, new_pos, Quartz.kCGMouseButtonLeft
         )
         Quartz.CGEventSetIntegerValueField(event, Quartz.kCGMouseEventDeltaX, int(dx))
         Quartz.CGEventSetIntegerValueField(event, Quartz.kCGMouseEventDeltaY, int(dy))
@@ -292,3 +309,43 @@ def foreground_app_name() -> str | None:
         except Exception:
             return None
     return None
+
+
+def macos_permission_status() -> dict[str, bool | None]:
+    """Ground-truth macOS permission state, asked directly of the OS rather
+    than inferred from "did the user toggle the right switch" — a System
+    Settings toggle can be out of sync with what macOS's TCC database
+    actually has recorded (e.g. an app that crashed before ever calling the
+    API that registers/prompts for a permission may never have gotten an
+    entry to toggle in the first place, even though a DIFFERENT permission
+    for the same app looks granted). Returns None for a check that
+    couldn't run (not macOS, or pyobjc-framework-Quartz missing) rather
+    than a possibly-wrong True/False. See main.py's startup call — this is
+    logged loudly (not just to the log file) since it answers "is
+    permissions the problem" definitively instead of guessing.
+
+    - accessibility: Quartz.AXIsProcessTrusted() — needed to send
+      simulated mouse/keyboard input at all.
+    - input_monitoring: Quartz.CGPreflightListenEventAccess() — needed for
+      pynput's global hotkey listener specifically; does NOT prompt (a
+      "preflight" read-only check), unlike CGRequestListenEventAccess.
+    - screen_recording: Quartz.CGPreflightScreenCaptureAccess() — needed
+      for mss to capture the screen at all."""
+    result: dict[str, bool | None] = {
+        "accessibility": None, "input_monitoring": None, "screen_recording": None,
+    }
+    if not IS_MACOS or Quartz is None:
+        return result
+    try:
+        result["accessibility"] = bool(Quartz.AXIsProcessTrusted())
+    except Exception:
+        pass
+    try:
+        result["input_monitoring"] = bool(Quartz.CGPreflightListenEventAccess())
+    except Exception:
+        pass
+    try:
+        result["screen_recording"] = bool(Quartz.CGPreflightScreenCaptureAccess())
+    except Exception:
+        pass
+    return result
