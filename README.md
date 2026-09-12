@@ -64,22 +64,39 @@ pip install -r requirements.txt
 python3 main.py
 ```
 
-Before it'll actually see/control anything, grant these once in **System
-Settings > Privacy & Security**, for whatever app is running the command
-above (Terminal, iTerm, etc. — or the specific Python binary in `venv/`,
-if macOS prompts for that instead):
+Before it'll actually see/control anything, grant these three once in
+**System Settings > Privacy & Security**, for whatever app is running the
+command above (Terminal, iTerm, etc. — or the specific Python binary in
+`venv/`, if macOS prompts for that instead):
 
 - **Accessibility** — required for `pynput` to send simulated
-  mouse/keyboard input and read global hotkeys at all. Without this,
-  clicks/keypresses silently do nothing.
+  mouse/keyboard input at all. Without this, clicks/keypresses silently
+  do nothing.
+- **Input Monitoring** — a *separate* permission from Accessibility,
+  required for `pynput` to listen for global hotkeys (F6/F7/F8/P/etc.)
+  at all. Easy to miss since Accessibility alone is enough on some older
+  macOS versions — if hotkeys do nothing even though clicks/typing work
+  fine otherwise, this is almost certainly the missing one.
 - **Screen Recording** — required for `mss` to capture the screen at all.
   Without this, macOS returns blank/black screenshots and every
   template-match will simply fail to find anything.
 
 macOS has no UAC/admin-elevation equivalent, so the app doesn't try to
-elevate itself there — just run it normally after granting the two
+elevate itself there — just run it normally after granting the three
 permissions above (may need to quit and reopen Terminal after granting
 them for the change to take effect).
+
+If a hotkey does nothing and the app's own log
+(`logs/macro.log`, or right there in the terminal) shows a line like
+`Hotkey 'p' ignored — Roblox isn't the focused window/app (currently
+focused: 'X')`, that's a *different* problem: the listener IS running
+and Input Monitoring IS granted, but the app checked which application is
+currently focused and decided it wasn't Roblox. If Roblox genuinely was
+focused when that logged, set `hotkeys.require_roblox_focus: false` in
+`config.yaml` to disable that check entirely — it's a Windows feature
+being carried over onto a fresh macOS port, so the underlying check
+(reading the frontmost app's name via NSWorkspace) hasn't been confirmed
+accurate on real macOS yet.
 
 Optional, for Towers mode's OCR-based floor-cleared detection:
 

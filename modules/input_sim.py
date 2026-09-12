@@ -268,3 +268,27 @@ def is_roblox_foreground(title_keyword: str = "roblox") -> bool:
     # Unknown platform, or macOS without pyobjc installed — don't silently
     # block every hotkey forever; let them through instead.
     return True
+
+
+def foreground_app_name() -> str | None:
+    """Diagnostic-only: the raw name is_roblox_foreground is actually
+    comparing against, so a hotkey silently doing nothing can be logged
+    with what the OS actually saw instead of just "nothing happened" —
+    see hotkeys.py's blocked-hotkey log line."""
+    if IS_WINDOWS:
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if not hwnd:
+            return None
+        length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+        if length == 0:
+            return None
+        buf = ctypes.create_unicode_buffer(length + 1)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+        return buf.value
+    elif IS_MACOS and NSWorkspace is not None:
+        try:
+            app = NSWorkspace.sharedWorkspace().frontmostApplication()
+            return app.localizedName() if app is not None else None
+        except Exception:
+            return None
+    return None

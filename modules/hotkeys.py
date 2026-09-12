@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 
 from pynput import keyboard
 
@@ -61,6 +62,7 @@ class HotkeyListener:
         # toggle Campaign mode.
         self.require_roblox_focus = hk.get("require_roblox_focus", True)
         self.roblox_window_keyword = hk.get("roblox_window_keyword", "roblox")
+        self._last_focus_block_log = 0.0
 
         self.story_running_event = story_running_event
         self.towers_running_event = towers_running_event
@@ -95,6 +97,21 @@ class HotkeyListener:
             return
 
         if self.require_roblox_focus and not input_sim.is_roblox_foreground(self.roblox_window_keyword):
+            # Throttled (not per-keystroke) — this is the fix for a hotkey
+            # silently doing nothing being genuinely indistinguishable from
+            # "the listener isn't running at all" otherwise. Logs what the
+            # OS actually reports as focused, so a mismatched app name (or
+            # a permission problem returning nothing) shows up here instead
+            # of just "I pressed the key and nothing happened."
+            now = time.time()
+            if now - self._last_focus_block_log > 2.0:
+                self._last_focus_block_log = now
+                self.logger.info(
+                    "Hotkey '%s' ignored — Roblox isn't the focused window/app "
+                    "(currently focused: %r). Set hotkeys.require_roblox_focus: "
+                    "false in config.yaml to disable this check.",
+                    name, input_sim.foreground_app_name(),
+                )
             return
 
         if name == self.start_key:
