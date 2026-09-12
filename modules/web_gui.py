@@ -189,9 +189,31 @@ class WebControlPanel:
         # separately refuses outright to run anywhere except the real
         # process main thread (confirmed live: "WebViewException: pywebview
         # must be run on a main thread."). Two hard, conflicting
-        # single-thread requirements — resolved by giving Tk its own
-        # dedicated thread for its entire lifecycle (created there, pumped
-        # there) and reserving the actual main thread for webview.start().
+        # single-thread requirements — resolved (on Windows) by giving Tk
+        # its own dedicated thread for its entire lifecycle (created there,
+        # pumped there) and reserving the actual main thread for
+        # webview.start().
+        #
+        # macOS (2026-09-13): this same split crashes hard — confirmed live,
+        # "Terminating app due to uncaught exception of type NSException".
+        # Windows tolerates a Tk root being created on a non-main thread;
+        # macOS's Aqua/Cocoa backend does not — creating an NSWindow off the
+        # main thread is a hard Cocoa error, not a Python exception, so it
+        # can't be caught and just kills the process. And unlike Windows,
+        # there's no free thread to hand Tk here: pywebview's Cocoa backend
+        # is exactly as inflexible about needing the real main thread as its
+        # Windows backend is, so both frameworks want the one thread macOS
+        # actually allows GUI work on. Rather than a real fix (would mean
+        # rebuilding the overlays as extra pywebview windows instead of Tk
+        # ones — untested, unverifiable without a Mac), overlays are simply
+        # skipped on macOS: run() never starts the Tk thread there, and
+        # every method below that would touch self._overlay_root or the
+        # per-overlay Tk widgets checks self._overlay_root is not None
+        # first. Core automation (Story/Towers/PvP/Auto Clicker, the
+        # control panel itself) is unaffected — only the four in-game
+        # overlay windows (AFK banner, floor mirror, ELO overlay, Towers
+        # tracer) are unavailable on macOS.
+        self._overlay_root: tk.Tk | None = None
         self._overlay_ready = threading.Event()
 
         # -- visible control panel, pywebview --
@@ -642,6 +664,8 @@ class WebControlPanel:
         self._overlay_root.after(200, self._poll_overlays)
 
     def hide_overlays_for_capture(self, timeout: float = 0.3) -> None:
+        if self._overlay_root is None:
+            return  # macOS — overlays never started, nothing to hide
         self._capture_in_progress = True
         done = threading.Event()
 
@@ -659,6 +683,8 @@ class WebControlPanel:
         done.wait(timeout)
 
     def show_overlays_after_capture(self) -> None:
+        if self._overlay_root is None:
+            return  # macOS — overlays never started, nothing to show
         def _do():
             if self._banner_visible:
                 self._banner.deiconify()
@@ -673,7 +699,8 @@ class WebControlPanel:
 
     def _handle_webview_closed(self) -> None:
         self.on_close()
-        self._overlay_root.after(0, self._overlay_root.quit)
+        if self._overlay_root is not None:
+            self._overlay_root.after(0, self._overlay_root.quit)
 
     def _run_overlay_thread(self) -> None:
         """Tk's entire lifecycle — creation through mainloop — runs on this
@@ -691,7 +718,18 @@ class WebControlPanel:
         self._overlay_root.mainloop()
 
     def run(self) -> None:
-        threading.Thread(target=self._run_overlay_thread, daemon=True, name="OverlayTkLoop").start()
+        # macOS: skip the Tk overlay thread entirely — see the long comment
+        # on self._overlay_root in __init__ for why (creating a Tk root off
+        # the main thread is a hard, uncatchable Cocoa crash there, and
+        # there's no spare main thread to give it instead since pywebview's
+        # Cocoa backend needs that one too). self._overlay_root stays None,
+        # which every method that would otherwise touch it already checks
+        # for. Everything else (control panel, all automation modes) is
+        # unaffected.
+        if input_sim.IS_MACOS:
+            self._overlay_ready.set()  # nothing to wait for — skip the 5s timeout below
+        else:
+            threading.Thread(target=self._run_overlay_thread, daemon=True, name="OverlayTkLoop").start()
         # towers.py/story_campaign.py's hide_overlays_fn/show_overlays_fn
         # get wired up to methods on this object immediately after
         # construction (see main.py) — harmless if the underlying Tk
