@@ -90,6 +90,13 @@ hotkeys:
   campaign_toggle: "b"    # Story campaign: toggle enable/pause
   pvp_toggle: "p"          # PvP spam-click: toggle enable/pause
   auto_clicker_toggle: "x" # Auto Clicker: toggle enable/pause — rebindable live from the GUI's Auto Clicker tab
+  # User-requested (2026-09-12): only act on hotkeys while Roblox itself is
+  # the focused window (checked via the window title, see
+  # input_sim.is_roblox_foreground) — so e.g. typing "b" in Discord or a
+  # browser doesn't accidentally toggle Campaign mode. Set to false to go
+  # back to truly global hotkeys (fire regardless of what's focused).
+  require_roblox_focus: true
+  roblox_window_keyword: "roblox"
 
 teleport_button:
   # Preferred: template image match (recalibrate with tools/capture_template.py

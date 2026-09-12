@@ -207,6 +207,7 @@ class MacroApp:
             self.towers_automation,
             self.towers_log_queue,
             on_close=self._shutdown_flag.set,
+            campaign_running_event=self.campaign_running_event,
             pvp_running_event=self.pvp_running_event,
             pvp_log_queue=self.pvp_log_queue,
             pvp_spam=self.pvp_spam,

@@ -8,8 +8,11 @@ Starting any one mode stops every other one — they'd otherwise fight over
 the same clicks and movement keys.
 
 Runs on its own thread via pynput so hotkeys work even when Roblox (not this
-window) is focused. All this does is flip threading.Event flags — no click
-or movement logic lives here.
+window) is focused — but only actually act while Roblox itself is the
+focused window (hotkeys.require_roblox_focus, default true; see
+input_sim.is_roblox_foreground), so e.g. typing "b" in some other app
+doesn't accidentally toggle Campaign mode. All this does is flip
+threading.Event flags — no click or movement logic lives here.
 
 auto_clicker_key is rebindable live from the GUI's Auto Clicker tab (see
 gui.py's ControlPanel.set_auto_clicker_key) — unlike the other hotkeys,
@@ -24,6 +27,8 @@ import logging
 import threading
 
 from pynput import keyboard
+
+from . import input_sim
 
 
 def _normalize(key_name: str) -> str:
@@ -48,6 +53,14 @@ class HotkeyListener:
         self.campaign_key = _normalize(hk.get("campaign_toggle", "f9"))
         self.pvp_key = _normalize(hk.get("pvp_toggle", "p"))
         self.auto_clicker_key = _normalize(hk.get("auto_clicker_toggle", "c"))
+
+        # User-requested (2026-09-12): hotkeys used to fire no matter which
+        # window had focus (the whole point of a "global" hotkey) — now
+        # gated so they only act while Roblox itself is the focused window,
+        # so e.g. typing "b" in Discord or a browser doesn't accidentally
+        # toggle Campaign mode.
+        self.require_roblox_focus = hk.get("require_roblox_focus", True)
+        self.roblox_window_keyword = hk.get("roblox_window_keyword", "roblox")
 
         self.story_running_event = story_running_event
         self.towers_running_event = towers_running_event
@@ -79,6 +92,9 @@ class HotkeyListener:
     def _on_press(self, key) -> None:
         name = self._key_to_name(key)
         if name is None:
+            return
+
+        if self.require_roblox_focus and not input_sim.is_roblox_foreground(self.roblox_window_keyword):
             return
 
         if name == self.start_key:

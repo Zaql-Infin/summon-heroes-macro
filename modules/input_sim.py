@@ -185,3 +185,21 @@ def drag_camera(dx: int, seconds: float, button: str = "right", steps: int = 20)
             time.sleep(step_delay)
     finally:
         _mouse.release(btn)
+
+
+def is_roblox_foreground(title_keyword: str = "roblox") -> bool:
+    """True if the currently-foreground (focused) window's title contains
+    `title_keyword` (case-insensitive) — used to gate hotkeys so they only
+    fire while Roblox itself is focused, not whatever window happens to
+    have focus. Pure window-title inspection via the standard Win32 user32
+    calls (GetForegroundWindow/GetWindowTextW) — no process injection, no
+    reading another process's memory."""
+    hwnd = ctypes.windll.user32.GetForegroundWindow()
+    if not hwnd:
+        return False
+    length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+    if length == 0:
+        return False
+    buf = ctypes.create_unicode_buffer(length + 1)
+    ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+    return title_keyword.lower() in buf.value.lower()

@@ -158,6 +158,33 @@
   .click-cell .val { font-size: 18px; font-weight: 700; }
   .click-cell .cap { font-size: 10px; color: var(--muted); }
 
+  .campaign-card {
+    margin-top: 14px; padding: 12px 14px; border-radius: 12px;
+    background: rgba(58, 33, 88, 0.35); border: 1px solid rgba(162, 89, 255, 0.35);
+    animation: bubble-idle 4s ease-in-out infinite;
+  }
+  .campaign-title {
+    display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; color: var(--fg);
+  }
+  .campaign-title .dot {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--accent-stop);
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+  }
+  .campaign-title .dot.on {
+    background: var(--accent-run); box-shadow: 0 0 8px var(--accent-run);
+    animation: campaign-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes campaign-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.35); }
+  }
+  .campaign-key {
+    margin-left: auto; background: var(--purple); color: white; border-radius: 6px;
+    padding: 2px 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+    box-shadow: 0 0 8px rgba(162, 89, 255, 0.5);
+  }
+  #campaign-status { margin: 6px 0 0; }
+
   .log-label { font-size: 11px; font-weight: 700; color: var(--muted); margin: 6px 0 4px; }
   .log-box {
     flex: 1; min-height: 100px; background: rgba(10, 6, 16, 0.75); border-radius: 8px;
@@ -200,6 +227,14 @@
           </div>
           <div class="hint" id="story-hotkey">Hotkeys: F6 start · F7 stop</div>
           <div class="hint" id="story-desc">Clicks teleport-to-hero every 2.5s while running.</div>
+
+          <div class="campaign-card" id="campaign-card">
+            <div class="campaign-title">
+              <span class="dot" id="campaign-dot"></span>Campaign
+              <span class="campaign-key" id="campaign-key">B</span>
+            </div>
+            <div class="hint" id="campaign-status">Off — press B (in-game) to start the full loop</div>
+          </div>
         </div>
 
         <!-- Towers -->
@@ -308,6 +343,11 @@
     document.getElementById("towers-hotkey").textContent = `Hotkey: ${hk.towers} = toggle enable/pause`;
     document.getElementById("pvp-hotkey").textContent = `Hotkey: ${hk.pvp} = toggle`;
     document.getElementById("ac-hotkey").textContent = `Hotkey: ${hk.autoclicker}`;
+    if (hk.campaign) {
+      document.getElementById("campaign-key").textContent = hk.campaign;
+      document.getElementById("campaign-status").textContent =
+        `Off — press ${hk.campaign} (in-game) to start the full loop`;
+    }
   }
 
   // Whole right side "swipes" to the new section: outgoing pane slides out
@@ -411,6 +451,14 @@
       const storyStatus = document.getElementById("story-status");
       storyStatus.textContent = s.story_on ? "RUNNING" : "STOPPED";
       storyStatus.classList.toggle("on", s.story_on);
+
+      // Campaign
+      document.getElementById("campaign-dot").classList.toggle("on", s.campaign_on);
+      const campaignStatus = document.getElementById("campaign-status");
+      const campaignKey = document.getElementById("campaign-key").textContent;
+      campaignStatus.textContent = s.campaign_on
+        ? "Running — looping Story campaign until stopped"
+        : `Off — press ${campaignKey} (in-game) to start the full loop`;
 
       // Towers
       document.getElementById("towers-nav-dot").classList.toggle("on", s.towers_on);

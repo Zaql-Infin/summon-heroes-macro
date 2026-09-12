@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import base64
 import ctypes
+import math
 import mimetypes
 import os
 import queue
@@ -43,13 +44,21 @@ import mss
 import numpy as np
 import webview
 
+from . import input_sim
+
 _GWL_EXSTYLE = -20
 _WS_EX_LAYERED = 0x80000
 _WS_EX_TRANSPARENT = 0x20
 _LWA_COLORKEY = 0x1
 
 _BANNER_RED = "#ff2b2b"
+# User-requested (2026-09-12): themed to match the control panel's purple
+# "bubbly" look instead of a flat red, with a gentle color pulse between
+# these two shades — see _animate_banner.
+_BANNER_PURPLE = "#a259ff"
+_BANNER_PURPLE_BRIGHT = "#e6d1ff"
 _ELO_LIGHT_BLUE = "#66ccff"
+_ELO_LIGHT_BLUE_BRIGHT = "#d0f0ff"
 _ELO_PANEL_BLUE = "#1565c0"
 _TRACER_CHOSEN = "#00ff88"
 _TRACER_OTHER = "#888888"
@@ -110,6 +119,7 @@ class WebControlPanel:
         towers_automation,
         log_queue: "queue.Queue[str]",
         on_close,
+        campaign_running_event: threading.Event | None = None,
         pvp_running_event: threading.Event | None = None,
         pvp_log_queue: "queue.Queue[str] | None" = None,
         pvp_spam=None,
@@ -124,6 +134,7 @@ class WebControlPanel:
         self.towers_automation = towers_automation
         self.log_queue = log_queue
         self.on_close = on_close
+        self.campaign_running_event = campaign_running_event
         self.pvp_running_event = pvp_running_event
         self.pvp_log_queue = pvp_log_queue
         self.pvp_spam = pvp_spam
@@ -177,6 +188,7 @@ class WebControlPanel:
             "start": hk["start"].upper(),
             "stop": hk["stop"].upper(),
             "towers": hk.get("towers_toggle", "f8").upper(),
+            "campaign": hk.get("campaign_toggle", "b").upper(),
             "pvp": hk.get("pvp_toggle", "p").upper(),
             "autoclicker": hk.get("auto_clicker_toggle", "c").upper(),
         }
@@ -234,6 +246,7 @@ class WebControlPanel:
 
         return {
             "story_on": self.story_running_event.is_set(),
+            "campaign_on": self.campaign_running_event is not None and self.campaign_running_event.is_set(),
             "towers_on": self.towers_running_event.is_set(),
             "towers_stats": towers_stats,
             "towers_log": self._drain(self.log_queue),
@@ -357,9 +370,14 @@ class WebControlPanel:
         except Exception:
             pass
 
-    # -- AFK banner (Toplevel, borderless, always-on-top) — unchanged from gui.py --
+    # -- AFK banner (Toplevel, borderless, always-on-top) --
 
     def _build_banner(self) -> None:
+        # User-requested (2026-09-12): moved to the top of the screen,
+        # shrunk way down, and given a gentle bubbly pulse/bob animation to
+        # match the control panel's theme instead of one giant static red
+        # wall of text — see _reposition_banner (top placement) and
+        # _animate_banner (the pulse/bob loop).
         banner = tk.Toplevel(self._overlay_root)
         self._banner = banner
         banner.overrideredirect(True)
@@ -367,14 +385,18 @@ class WebControlPanel:
         banner.configure(bg="black")
         banner.attributes("-transparentcolor", "black")
 
-        tk.Label(
-            banner, text=self.banner_text, font=("Arial Black", 96, "bold"),
-            fg=_BANNER_RED, bg="black",
-        ).pack(padx=20, pady=20)
+        self._banner_label = tk.Label(
+            banner, text=self.banner_text, font=("Arial Black", 30, "bold"),
+            fg=_BANNER_PURPLE, bg="black",
+        )
+        self._banner_label.pack(padx=16, pady=8)
+        self._banner_anim_tick = 0
+        self._banner_base_y = 16
 
         self._reposition_banner()
         banner.withdraw()
         _make_click_through(banner)
+        self._animate_banner()
 
         floor_overlay = tk.Toplevel(self._overlay_root)
         self._floor_overlay = floor_overlay
@@ -394,16 +416,22 @@ class WebControlPanel:
         overlay.attributes("-topmost", True)
         overlay.configure(bg=_ELO_PANEL_BLUE)
 
-        tk.Label(
-            overlay, text=self.elo_overlay_text, font=("Arial Black", 40, "bold"),
+        # User-requested (2026-09-12): shrunk down and given the same
+        # gentle pulse animation as the AFK banner instead of one big
+        # static title — already sits at the top, per that same request.
+        self._elo_title_label = tk.Label(
+            overlay, text=self.elo_overlay_text, font=("Arial Black", 20, "bold"),
             fg=_ELO_LIGHT_BLUE, bg=_ELO_PANEL_BLUE,
-        ).pack(padx=20, pady=(8, 0))
+        )
+        self._elo_title_label.pack(padx=14, pady=(6, 0))
         self._elo_label = tk.Label(overlay, bg=_ELO_PANEL_BLUE)
-        self._elo_label.pack(padx=20, pady=(4, 10))
+        self._elo_label.pack(padx=14, pady=(3, 7))
+        self._elo_anim_tick = 0
 
         self._reposition_elo_overlay()
         overlay.withdraw()
         _make_click_through(overlay)
+        self._animate_elo_overlay()
 
     def _reposition_elo_overlay(self) -> None:
         overlay = self._elo_overlay
@@ -411,6 +439,15 @@ class WebControlPanel:
         w = overlay.winfo_reqwidth()
         sw = overlay.winfo_screenwidth()
         overlay.geometry(f"+{(sw - w) // 2}+20")
+
+    def _animate_elo_overlay(self) -> None:
+        """Same gentle pulse idea as _animate_banner, for the ELO overlay's
+        title text — user-requested (2026-09-12)."""
+        if self._elo_overlay_visible:
+            self._elo_anim_tick += 1
+            pulse = (math.sin(self._elo_anim_tick * 0.1) + 1) / 2
+            self._elo_title_label.configure(fg=self._lerp_color(_ELO_LIGHT_BLUE, _ELO_LIGHT_BLUE_BRIGHT, pulse))
+        self._elo_overlay.after(80, self._animate_elo_overlay)
 
     def _grab_elo_image(self) -> bytes | None:
         if not self.elo_region:
@@ -427,11 +464,42 @@ class WebControlPanel:
         return buf.tobytes() if ok else None
 
     def _reposition_banner(self) -> None:
+        # User-requested (2026-09-12): top of the screen, not screen-center
+        # (which used to sit right over the middle of the gameplay view).
         banner = self._banner
         banner.update_idletasks()
-        w, h = banner.winfo_reqwidth(), banner.winfo_reqheight()
-        sw, sh = banner.winfo_screenwidth(), banner.winfo_screenheight()
-        banner.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        w = banner.winfo_reqwidth()
+        sw = banner.winfo_screenwidth()
+        banner.geometry(f"+{(sw - w) // 2}+{self._banner_base_y}")
+
+    @staticmethod
+    def _lerp_color(c1: str, c2: str, t: float) -> str:
+        """Linear-interpolates between two "#rrggbb" hex colors at t in
+        [0, 1] — used for the banner's gentle pulse (see _animate_banner)."""
+        r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
+        r2, g2, b2 = int(c2[1:3], 16), int(c2[3:5], 16), int(c2[5:7], 16)
+        r = round(r1 + (r2 - r1) * t)
+        g = round(g1 + (g2 - g1) * t)
+        b = round(b1 + (b2 - b1) * t)
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def _animate_banner(self) -> None:
+        """Gentle bubbly bob + color-pulse loop for the AFK banner, running
+        independently of _poll_overlays (which also does screen grabs, so
+        keeping this on its own lighter/faster tick keeps the animation
+        smooth). User-requested (2026-09-12) to match the control panel's
+        bubbly-animated look instead of a static wall of text."""
+        if self._banner_visible:
+            self._banner_anim_tick += 1
+            t = self._banner_anim_tick
+            bob = round(3 * math.sin(t * 0.15))
+            banner = self._banner
+            w = banner.winfo_reqwidth()
+            sw = banner.winfo_screenwidth()
+            banner.geometry(f"+{(sw - w) // 2}+{self._banner_base_y + bob}")
+            pulse = (math.sin(t * 0.1) + 1) / 2
+            self._banner_label.configure(fg=self._lerp_color(_BANNER_PURPLE, _BANNER_PURPLE_BRIGHT, pulse))
+        self._banner.after(80, self._animate_banner)
 
     def _reposition_floor_overlay(self) -> None:
         overlay = self._floor_overlay
@@ -502,7 +570,20 @@ class WebControlPanel:
         pvp_on = self.pvp_running_event is not None and self.pvp_running_event.is_set()
         autoclicker_on = self.auto_clicker_running_event is not None and self.auto_clicker_running_event.is_set()
 
-        running = story_on or towers_on or autoclicker_on
+        # User-requested (2026-09-12): "make it so it doesn't affect
+        # anything else on the PC" — actual process/DLL injection into
+        # Roblox was declined (would cross into cheat-injection territory,
+        # a bannable ToS violation, and this project has been pure
+        # external input-simulation from the start). What injection would
+        # have actually bought here — the overlays only being visible over
+        # the game, not lingering on top of other windows after alt-tab —
+        # is achieved the safe way instead: hide them whenever Roblox isn't
+        # the focused window, same window-title check hotkeys.py now uses.
+        roblox_focused = input_sim.is_roblox_foreground()
+
+        running = (story_on or towers_on or autoclicker_on) and roblox_focused
+        pvp_on = pvp_on and roblox_focused
+        towers_visible = towers_on and roblox_focused
         if not self._capture_in_progress:
             if running and not self._banner_visible:
                 self._banner.deiconify()
@@ -520,10 +601,10 @@ class WebControlPanel:
                 self._elo_overlay.withdraw()
                 self._elo_overlay_visible = False
 
-            if towers_on and not self._tracer_visible:
+            if towers_visible and not self._tracer_visible:
                 self._tracer.deiconify()
                 self._tracer_visible = True
-            elif not towers_on and self._tracer_visible:
+            elif not towers_visible and self._tracer_visible:
                 self._tracer.withdraw()
                 self._tracer_visible = False
 
@@ -543,7 +624,7 @@ class WebControlPanel:
                 self._elo_label.configure(image=photo)
                 self._reposition_elo_overlay()
 
-        if towers_on:
+        if towers_visible:
             self._draw_tracers()
 
         self._overlay_root.after(200, self._poll_overlays)
