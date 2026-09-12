@@ -20,12 +20,16 @@ import mss
 import pytesseract
 
 # pytesseract shells out to the Tesseract binary by name, which only works if
-# it's on PATH — point at the default winget/installer location explicitly
-# so this doesn't depend on PATH having refreshed for whatever process
-# eventually runs this.
+# it's on PATH — point at the default install location explicitly so this
+# doesn't depend on PATH having refreshed for whatever process eventually
+# runs this. Windows: winget/installer default. macOS (2026-09-12): Homebrew
+# default locations (Apple Silicon vs Intel) — `brew install tesseract`, see
+# README's macOS section.
 for _tesseract_path in (
     r"C:\Program Files\Tesseract-OCR\tesseract.exe",
     r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    "/opt/homebrew/bin/tesseract",
+    "/usr/local/bin/tesseract",
 ):
     if os.path.isfile(_tesseract_path):
         pytesseract.pytesseract.tesseract_cmd = _tesseract_path

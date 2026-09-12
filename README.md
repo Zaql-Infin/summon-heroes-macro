@@ -37,16 +37,73 @@ banned.** Use at your own risk, ideally on an account you're OK losing.
 
 ## Setup
 
+Runs on **Windows** and **macOS**. Windows gets a packaged, self-updating
+`.exe` (see GitHub Releases) — no Python install needed there. macOS has
+no prebuilt app (nobody involved in building this has a Mac to build one
+on — PyInstaller can't cross-compile between OSes), so it runs from source.
+
+### Windows
+
 ```bash
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
+python main.py
 ```
 
-Requires Windows (uses `pygetwindow`/`pywin32` for the foreground-window
-check). Run everything from a normal terminal — not as Administrator,
-since `pynput`'s global hotkey hook can behave oddly across privilege
-levels if only one process is elevated.
+The app self-elevates (UAC prompt) on startup — Windows blocks simulated
+input from a lower-privilege process reaching a higher-privilege window,
+so this keeps working even if Roblox itself is ever run as Administrator.
+
+### macOS
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python3 main.py
+```
+
+Before it'll actually see/control anything, grant these once in **System
+Settings > Privacy & Security**, for whatever app is running the command
+above (Terminal, iTerm, etc. — or the specific Python binary in `venv/`,
+if macOS prompts for that instead):
+
+- **Accessibility** — required for `pynput` to send simulated
+  mouse/keyboard input and read global hotkeys at all. Without this,
+  clicks/keypresses silently do nothing.
+- **Screen Recording** — required for `mss` to capture the screen at all.
+  Without this, macOS returns blank/black screenshots and every
+  template-match will simply fail to find anything.
+
+macOS has no UAC/admin-elevation equivalent, so the app doesn't try to
+elevate itself there — just run it normally after granting the two
+permissions above (may need to quit and reopen Terminal after granting
+them for the change to take effect).
+
+Optional, for Towers mode's OCR-based floor-cleared detection:
+
+```bash
+brew install tesseract
+```
+
+**Known macOS limitations (not live-tested against a real Mac + Roblox —
+no Mac was available while building this; please report back what does/
+doesn't work):**
+- The in-game overlays (AFK banner, floor-number mirror, PvP ELO overlay,
+  Towers tracer box) use a Windows-only Tk transparency trick
+  (`-transparentcolor`) to render as see-through, click-through text over
+  the game. On macOS this degrades gracefully to a plain opaque window
+  instead of crashing, but it will look like a solid box, not transparent
+  text, and may block clicks underneath it.
+- Camera-turning (`movement.camera_turn_method: "mouse"`, and Towers
+  mode's search-sweep) uses a Quartz-based relative-mouse-motion port of
+  the same fix Windows needed for Roblox's camera-look to register real
+  drag input instead of ignoring it — this is a best-effort port, not a
+  confirmed-working one on real macOS + Roblox.
+- Self-elevation and the auto-updater are Windows-only concepts and are
+  simply skipped on macOS (see `main.py`) — update by pulling the repo /
+  redownloading the source yourself.
 
 ## Calibrating for your setup
 

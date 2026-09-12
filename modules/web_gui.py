@@ -95,6 +95,18 @@ def _normalize_rebind_key(js_key: str) -> str | None:
     return _REBIND_KEY_OVERRIDES.get(name, name)
 
 
+def _set_transparent_color(window: tk.Misc, color: str) -> None:
+    """Colorkey transparency (the named color renders as see-through) —
+    "-transparentcolor" is a Windows-only Tk extension; stock Tk/Aqua on
+    macOS doesn't support it at all and raises TclError. Guarded so a Mac
+    run just gets an opaque overlay window (a known, documented limitation
+    — see README's macOS section) instead of crashing on startup."""
+    try:
+        window.attributes("-transparentcolor", color)
+    except tk.TclError:
+        pass
+
+
 def _make_click_through(window: tk.Misc) -> None:
     """OS-level click-through, identical technique to the old gui.py —
     see that module's history for why the explicit
@@ -383,7 +395,7 @@ class WebControlPanel:
         banner.overrideredirect(True)
         banner.attributes("-topmost", True)
         banner.configure(bg="black")
-        banner.attributes("-transparentcolor", "black")
+        _set_transparent_color(banner, "black")
 
         self._banner_label = tk.Label(
             banner, text=self.banner_text, font=("Arial Black", 30, "bold"),
@@ -403,7 +415,7 @@ class WebControlPanel:
         floor_overlay.overrideredirect(True)
         floor_overlay.attributes("-topmost", True)
         floor_overlay.configure(bg="black")
-        floor_overlay.attributes("-transparentcolor", "black")
+        _set_transparent_color(floor_overlay, "black")
         self._floor_label = tk.Label(floor_overlay, bg="black")
         self._floor_label.pack(padx=10, pady=10)
         floor_overlay.withdraw()
@@ -529,7 +541,7 @@ class WebControlPanel:
         tracer.overrideredirect(True)
         tracer.attributes("-topmost", True)
         tracer.configure(bg="black")
-        tracer.attributes("-transparentcolor", "black")
+        _set_transparent_color(tracer, "black")
 
         rx, ry, rw, rh = self.screen_region
         tracer.geometry(f"{rw}x{rh}+{rx}+{ry}")

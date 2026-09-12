@@ -4,11 +4,22 @@ input_sim.py — OS-level input simulation only.
 Everything here goes through pynput/pyautogui, i.e. the same input path a
 real keyboard/mouse would use. There is no process injection, no memory
 access, and no reading/writing of game files anywhere in this module.
+
+Cross-platform (2026-09-12): Windows was the only target for most of this
+project's life, so the raw-relative-mouse-motion trick below (needed because
+Roblox's camera-look ignores absolute cursor teleports while a drag button
+is held) was Win32-only (ctypes.windll.user32.mouse_event). macOS support
+adds a Quartz Event Services equivalent — see _relative_mouse_move and
+is_roblox_foreground. IMPORTANT: the macOS path has NOT been live-tested
+against a real Roblox client (no Mac available to the person who wrote
+this) — it's a best-effort port of the same fix Windows needed, not a
+confirmed-working one. If camera-turning/dragging doesn't register on
+macOS, that's the first place to look. See README's macOS section.
 """
 
 from __future__ import annotations
 
-import ctypes
+import sys
 import time
 
 import pyautogui
@@ -17,17 +28,55 @@ from pynput.mouse import Controller as MouseController, Button
 
 pyautogui.FAILSAFE = True  # slamming the mouse into a screen corner aborts pyautogui calls
 
-_MOUSEEVENTF_MOVE = 0x0001
+IS_WINDOWS = sys.platform == "win32"
+IS_MACOS = sys.platform == "darwin"
+
+if IS_WINDOWS:
+    import ctypes
+    _MOUSEEVENTF_MOVE = 0x0001
+elif IS_MACOS:
+    # pyobjc-framework-Quartz — only actually imported/required on macOS,
+    # see requirements.txt. Optional at import time so this module still
+    # loads (with degraded relative-move behavior, see below) if it's
+    # somehow missing rather than crashing the whole app on startup.
+    try:
+        import Quartz
+    except ImportError:
+        Quartz = None
+    try:
+        from AppKit import NSWorkspace
+    except ImportError:
+        NSWorkspace = None
 
 
 def _relative_mouse_move(dx: int, dy: int) -> None:
-    """A genuinely relative mouse-motion event via the raw Win32 API, not
-    pynput's Controller.move() — that call is still built on SetCursorPos
-    (an absolute cursor teleport) under the hood on Windows. Games that
-    capture mouse-look via raw/locked input (Roblox included, while a
-    camera-drag button is held) read relative motion deltas and silently
-    ignore SetCursorPos, which is why the drag previously did nothing."""
-    ctypes.windll.user32.mouse_event(_MOUSEEVENTF_MOVE, int(dx), int(dy), 0, 0)
+    """A genuinely relative mouse-motion event, not an absolute cursor
+    teleport (pynput's Controller.move()/.position are SetCursorPos-style
+    teleports under the hood on both platforms). Games that capture
+    mouse-look via raw/locked input (Roblox included, while a camera-drag
+    button is held) read relative motion deltas and silently ignore
+    absolute repositioning, which is why a plain .move() previously did
+    nothing for camera-turning.
+
+    Windows: raw Win32 mouse_event — confirmed live, extensively, this
+    session. macOS: Quartz CGEvent with the delta fields set directly —
+    NOT live-verified (best-effort port, see module docstring)."""
+    if IS_WINDOWS:
+        ctypes.windll.user32.mouse_event(_MOUSEEVENTF_MOVE, int(dx), int(dy), 0, 0)
+    elif IS_MACOS and Quartz is not None:
+        event = Quartz.CGEventCreateMouseEvent(
+            None, Quartz.kCGEventMouseMoved, (0, 0), Quartz.kCGMouseButtonLeft
+        )
+        Quartz.CGEventSetIntegerValueField(event, Quartz.kCGMouseEventDeltaX, int(dx))
+        Quartz.CGEventSetIntegerValueField(event, Quartz.kCGMouseEventDeltaY, int(dy))
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+    else:
+        # Last-resort fallback (Quartz unavailable, or an unexpected OS) —
+        # an absolute move, which is known NOT to work for Roblox's
+        # camera-look on Windows. Kept so the app still runs rather than
+        # crashing, but camera-turning will likely be broken here.
+        cx, cy = _mouse.position
+        _mouse.position = (cx + dx, cy + dy)
 
 _keyboard = KeyboardController()
 _mouse = MouseController()
@@ -188,18 +237,34 @@ def drag_camera(dx: int, seconds: float, button: str = "right", steps: int = 20)
 
 
 def is_roblox_foreground(title_keyword: str = "roblox") -> bool:
-    """True if the currently-foreground (focused) window's title contains
-    `title_keyword` (case-insensitive) — used to gate hotkeys so they only
-    fire while Roblox itself is focused, not whatever window happens to
-    have focus. Pure window-title inspection via the standard Win32 user32
-    calls (GetForegroundWindow/GetWindowTextW) — no process injection, no
-    reading another process's memory."""
-    hwnd = ctypes.windll.user32.GetForegroundWindow()
-    if not hwnd:
-        return False
-    length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
-    if length == 0:
-        return False
-    buf = ctypes.create_unicode_buffer(length + 1)
-    ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
-    return title_keyword.lower() in buf.value.lower()
+    """True if the currently-foreground (focused) window/app's title
+    contains `title_keyword` (case-insensitive) — used to gate hotkeys so
+    they only fire while Roblox itself is focused, not whatever window
+    happens to have focus. No process injection, no reading another
+    process's memory — just asking the OS which window/app is frontmost.
+
+    Windows: standard Win32 user32 calls (GetForegroundWindow/
+    GetWindowTextW). macOS: NSWorkspace's frontmost-application name (the
+    macOS Roblox client's app name is "RobloxPlayer", which still contains
+    "roblox" case-insensitively, matching the same default keyword) — NOT
+    live-verified (best-effort port, see module docstring)."""
+    if IS_WINDOWS:
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if not hwnd:
+            return False
+        length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+        if length == 0:
+            return False
+        buf = ctypes.create_unicode_buffer(length + 1)
+        ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
+        return title_keyword.lower() in buf.value.lower()
+    elif IS_MACOS and NSWorkspace is not None:
+        try:
+            app = NSWorkspace.sharedWorkspace().frontmostApplication()
+            name = app.localizedName() if app is not None else None
+            return bool(name) and title_keyword.lower() in name.lower()
+        except Exception:
+            return False
+    # Unknown platform, or macOS without pyobjc installed — don't silently
+    # block every hotkey forever; let them through instead.
+    return True

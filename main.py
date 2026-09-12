@@ -55,13 +55,23 @@ def _check_for_update_and_exit_if_updating() -> None:
 
 
 def _relaunch_elevated_if_needed() -> None:
-    """Windows blocks simulated mouse/keyboard input from a lower-privilege
-    process reaching a higher-privilege window (UIPI) — if Roblox is ever
-    run as Administrator, an unelevated macro's clicks/keys silently do
-    nothing even though the game genuinely has focus. Rather than requiring
-    the two to be manually kept in sync, always run elevated: check once at
-    startup and, if not already admin, relaunch self via the UAC 'runas'
-    verb and exit this (non-elevated) instance."""
+    """Windows-only. Windows blocks simulated mouse/keyboard input from a
+    lower-privilege process reaching a higher-privilege window (UIPI) — if
+    Roblox is ever run as Administrator, an unelevated macro's clicks/keys
+    silently do nothing even though the game genuinely has focus. Rather
+    than requiring the two to be manually kept in sync, always run
+    elevated: check once at startup and, if not already admin, relaunch
+    self via the UAC 'runas' verb and exit this (non-elevated) instance.
+
+    macOS/Linux (2026-09-12): no equivalent of UIPI/UAC elevation here —
+    permission is handled per-app via System Settings > Privacy & Security
+    (Accessibility, for simulated input; Screen Recording, for screenshots),
+    granted once to whatever runs main.py (Terminal, or python3 itself),
+    not something this process can request or elevate into on its own. See
+    README's macOS section."""
+    if sys.platform != "win32":
+        return
+
     import ctypes
 
     if ctypes.windll.shell32.IsUserAnAdmin():
