@@ -15,6 +15,17 @@ screen:
   # Region of the screen that actually shows the game (x, y, w, h).
   game_region: [0, 0, 2560, 1440]
 
+# User-requested (2026-09-13): dev vs public build split — the dev copy
+# (this file, and dist/SummonHeroesMacroApp/config.yaml) always keeps
+# everything on; the config bundled in a PUBLIC release zip has
+# towers_enabled patched to false by tools/stage_public_release.py, since
+# Towers isn't considered reliable enough to hand to other people yet.
+# When off: the Towers automation thread never starts, its hotkey is
+# ignored, and its GUI tab shows as disabled instead of the normal
+# controls. Story/PvP/Auto Clicker/Skip are unaffected either way.
+features:
+  towers_enabled: true
+
 # =============================================================================
 # Per-resolution coordinate overrides.
 #

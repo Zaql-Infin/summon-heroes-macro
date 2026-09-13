@@ -10,4 +10,5 @@ runs/
 models/
 build/
 dist/
+release_stage/
 *.spec

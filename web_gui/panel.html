@@ -94,6 +94,27 @@
     background: var(--accent-stop); margin-right: 8px; transition: background 0.2s ease;
   }
   .side-btn .dot.on { background: var(--accent-run); box-shadow: 0 0 8px var(--accent-run); }
+  .side-btn.disabled {
+    cursor: default;
+    opacity: 0.45;
+    animation: none;
+  }
+  .side-btn.disabled:hover {
+    color: var(--muted);
+    background: rgba(28, 14, 43, 0.35);
+    transform: none;
+    box-shadow: none;
+  }
+  .side-btn .lock { float: right; opacity: 0.7; }
+
+  .disabled-notice {
+    margin-top: 40px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .disabled-notice .big { font-size: 15px; font-weight: 700; color: var(--fg); margin-bottom: 8px; }
 
   #content-wrap {
     flex: 1; min-width: 0; position: relative; overflow: hidden;
@@ -212,7 +233,7 @@
   <div id="body-row">
     <div id="sidebar">
       <button class="side-btn active" data-tab="story"><span class="dot" id="story-nav-dot"></span>Story</button>
-      <button class="side-btn" data-tab="towers"><span class="dot" id="towers-nav-dot"></span>Towers</button>
+      <button class="side-btn" data-tab="towers" id="towers-nav-btn"><span class="dot" id="towers-nav-dot"></span>Towers</button>
       <button class="side-btn" data-tab="pvp"><span class="dot" id="pvp-nav-dot"></span>PvP</button>
       <button class="side-btn" data-tab="autoclicker"><span class="dot" id="ac-nav-dot"></span>Auto Clicker</button>
       <button class="side-btn" data-tab="skip"><span class="dot" id="skip-nav-dot"></span>Skip</button>
@@ -241,22 +262,28 @@
 
         <!-- Towers -->
         <div class="tab-pane hidden-pane" id="tab-towers">
-          <div class="status-text" id="towers-status" style="margin:6px 0 14px;">AUTOMATION PAUSED</div>
-          <div class="btn-row">
-            <button class="action run" onclick="api.start_towers()">▶ Start / Resume</button>
-            <button class="action pause" onclick="api.pause_towers()">⏸ Pause</button>
-            <button class="action stop" onclick="api.estop_towers()">⛔ Emergency Stop</button>
+          <div class="disabled-notice" id="towers-disabled-notice" style="display:none;">
+            <div class="big">🔒 Towers is disabled in this build</div>
+            <div>Still being worked on — check back in a future update.</div>
           </div>
-          <div class="hint" id="towers-hotkey">Hotkey: F8 = toggle enable/pause</div>
-          <div class="stat-grid">
-            <div class="stat-cell"><div class="val" id="stat-runtime">00:00</div><div class="cap">Runtime</div></div>
-            <div class="stat-cell"><div class="val" id="stat-doors">0</div><div class="cap">Doors Detected</div></div>
-            <div class="stat-cell"><div class="val" id="stat-movements">0</div><div class="cap">Movements</div></div>
-            <div class="stat-cell"><div class="val" id="stat-teleports">0</div><div class="cap">Teleports</div></div>
-            <div class="stat-cell"><div class="val" id="stat-recoveries">0</div><div class="cap">Recovery Events</div></div>
+          <div id="towers-live-controls">
+            <div class="status-text" id="towers-status" style="margin:6px 0 14px;">AUTOMATION PAUSED</div>
+            <div class="btn-row">
+              <button class="action run" onclick="api.start_towers()">▶ Start / Resume</button>
+              <button class="action pause" onclick="api.pause_towers()">⏸ Pause</button>
+              <button class="action stop" onclick="api.estop_towers()">⛔ Emergency Stop</button>
+            </div>
+            <div class="hint" id="towers-hotkey">Hotkey: F8 = toggle enable/pause</div>
+            <div class="stat-grid">
+              <div class="stat-cell"><div class="val" id="stat-runtime">00:00</div><div class="cap">Runtime</div></div>
+              <div class="stat-cell"><div class="val" id="stat-doors">0</div><div class="cap">Doors Detected</div></div>
+              <div class="stat-cell"><div class="val" id="stat-movements">0</div><div class="cap">Movements</div></div>
+              <div class="stat-cell"><div class="val" id="stat-teleports">0</div><div class="cap">Teleports</div></div>
+              <div class="stat-cell"><div class="val" id="stat-recoveries">0</div><div class="cap">Recovery Events</div></div>
+            </div>
+            <div class="log-label">Activity Log</div>
+            <div class="log-box" id="towers-log"></div>
           </div>
-          <div class="log-label">Activity Log</div>
-          <div class="log-box" id="towers-log"></div>
         </div>
 
         <!-- PvP -->
@@ -342,9 +369,19 @@
       if (state.bg_color) applyBgColor(state.bg_color);
       if (state.bg_image) applyBgImage(state.bg_image);
       if (state.hotkeys) applyHotkeys(state.hotkeys);
+      applyTowersEnabled(state.towers_enabled !== false);
     });
 
     setInterval(poll, 300);
+  }
+
+  function applyTowersEnabled(enabled) {
+    document.getElementById("towers-nav-btn").classList.toggle("disabled", !enabled);
+    document.getElementById("towers-nav-btn").innerHTML = enabled
+      ? '<span class="dot" id="towers-nav-dot"></span>Towers'
+      : '<span class="dot" id="towers-nav-dot"></span>Towers<span class="lock">🔒</span>';
+    document.getElementById("towers-disabled-notice").style.display = enabled ? "none" : "block";
+    document.getElementById("towers-live-controls").style.display = enabled ? "block" : "none";
   }
 
   function applyBgColor(hex) {

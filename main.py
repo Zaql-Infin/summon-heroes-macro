@@ -177,6 +177,12 @@ class MacroApp:
         self.teleport_fallback = config["teleport_button"]["fallback_coordinate"]
         self.interval = config["teleport_button"].get("interval_seconds", 2.5)
 
+        # User-requested (2026-09-13): dev vs public build split — off in a
+        # public release (config.yaml patched by tools/stage_public_release.py)
+        # until Towers is reliable enough to hand to other people; always on
+        # in the dev copy. See config.yaml's features.towers_enabled comment.
+        self.towers_enabled = bool(config.get("features", {}).get("towers_enabled", True))
+
         self.story_running_event = threading.Event()
         self.towers_running_event = threading.Event()
         self.campaign_running_event = threading.Event()
@@ -233,6 +239,7 @@ class MacroApp:
             pvp_running_event=self.pvp_running_event,
             auto_clicker_running_event=self.auto_clicker_running_event,
             skip_running_event=self.skip_running_event,
+            towers_enabled=self.towers_enabled,
         )
 
         self.gui = web_gui.WebControlPanel(
@@ -254,6 +261,7 @@ class MacroApp:
             skip_farm=self.skip_farm,
             hotkey_listener=self.hotkey_listener,
             config_path="config.yaml",
+            towers_enabled=self.towers_enabled,
         )
         # Wire up the hide/show-around-capture hooks now that the GUI exists.
         # Both TowersAutomation's own detection captures AND the navigator's
@@ -294,13 +302,15 @@ class MacroApp:
     def run(self) -> None:
         self.hotkey_listener.start()
         threading.Thread(target=self._story_click_loop, daemon=True, name="StoryClickLoop").start()
-        threading.Thread(target=self.towers_automation.run, daemon=True, name="TowersLoop").start()
+        if self.towers_enabled:
+            threading.Thread(target=self.towers_automation.run, daemon=True, name="TowersLoop").start()
         threading.Thread(target=self.story_campaign.run, daemon=True, name="CampaignLoop").start()
         threading.Thread(target=self.pvp_spam.run, daemon=True, name="PvpSpamLoop").start()
         threading.Thread(target=self.auto_clicker.run, daemon=True, name="AutoClickerLoop").start()
         threading.Thread(target=self.skip_farm.run, daemon=True, name="SkipFarmLoop").start()
+        towers_status = "F8 toggle" if self.towers_enabled else "disabled in this build"
         self.logger.info(
-            f"Macro ready (v{version.APP_VERSION}). Story: F6 start / F7 stop. Towers: F8 toggle. "
+            f"Macro ready (v{version.APP_VERSION}). Story: F6 start / F7 stop. Towers: {towers_status}. "
             f"Campaign: B toggle. PvP: P toggle. Auto Clicker: {self.hotkey_listener.auto_clicker_key.upper()} toggle. "
             f"Skip: {self.hotkey_listener.skip_key.upper()} toggle."
         )

@@ -47,6 +47,7 @@ class HotkeyListener:
         pvp_running_event: threading.Event | None = None,
         auto_clicker_running_event: threading.Event | None = None,
         skip_running_event: threading.Event | None = None,
+        towers_enabled: bool = True,
     ):
         hk = config["hotkeys"]
         self.start_key = _normalize(hk["start"])
@@ -72,6 +73,7 @@ class HotkeyListener:
         self.pvp_running_event = pvp_running_event
         self.auto_clicker_running_event = auto_clicker_running_event
         self.skip_running_event = skip_running_event
+        self.towers_enabled = towers_enabled
         self.logger = logger
 
         self._listener = keyboard.Listener(on_press=self._on_press)
@@ -130,7 +132,9 @@ class HotkeyListener:
             self.story_running_event.clear()
 
         elif name == self.towers_key:
-            if self.towers_running_event.is_set():
+            if not self.towers_enabled:
+                self.logger.info("Towers hotkey pressed — ignored, Towers is disabled in this build.")
+            elif self.towers_running_event.is_set():
                 self.logger.info("Towers hotkey pressed — Towers stopping.")
                 self.towers_running_event.clear()
             else:

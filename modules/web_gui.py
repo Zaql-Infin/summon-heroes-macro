@@ -143,6 +143,7 @@ class WebControlPanel:
         skip_farm=None,
         hotkey_listener=None,
         config_path: str = "config.yaml",
+        towers_enabled: bool = True,
     ):
         self.story_running_event = story_running_event
         self.towers_running_event = towers_running_event
@@ -161,6 +162,10 @@ class WebControlPanel:
         self.skip_farm = skip_farm
         self.hotkey_listener = hotkey_listener
         self.config_path = config_path
+        # User-requested (2026-09-13): dev vs public build split — off in a
+        # public release until Towers is reliable enough to hand to other
+        # people. See config.yaml's features.towers_enabled comment.
+        self.towers_enabled = towers_enabled
 
         self.screen_region = config["screen"]["game_region"]
 
@@ -271,7 +276,12 @@ class WebControlPanel:
 
     def get_init_state(self) -> dict:
         bg_image = self._image_to_data_uri(self._custom_bg_path) if self._custom_bg_path else None
-        return {"bg_color": self.bg_color, "bg_image": bg_image, "hotkeys": self._hotkeys}
+        return {
+            "bg_color": self.bg_color,
+            "bg_image": bg_image,
+            "hotkeys": self._hotkeys,
+            "towers_enabled": self.towers_enabled,
+        }
 
     def get_state(self) -> dict:
         towers_stats = {"runtime": 0, "doors_detected": 0, "movements": 0, "teleports": 0, "recoveries": 0}
@@ -331,6 +341,8 @@ class WebControlPanel:
         self.story_running_event.clear()
 
     def start_towers(self) -> None:
+        if not self.towers_enabled:
+            return
         self.towers_running_event.set()
         self.story_running_event.clear()
 
