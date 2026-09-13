@@ -138,6 +138,9 @@ class WebControlPanel:
         auto_clicker_running_event: threading.Event | None = None,
         auto_clicker_log_queue: "queue.Queue[str] | None" = None,
         auto_clicker=None,
+        skip_running_event: threading.Event | None = None,
+        skip_log_queue: "queue.Queue[str] | None" = None,
+        skip_farm=None,
         hotkey_listener=None,
         config_path: str = "config.yaml",
     ):
@@ -153,6 +156,9 @@ class WebControlPanel:
         self.auto_clicker_running_event = auto_clicker_running_event
         self.auto_clicker_log_queue = auto_clicker_log_queue
         self.auto_clicker = auto_clicker
+        self.skip_running_event = skip_running_event
+        self.skip_log_queue = skip_log_queue
+        self.skip_farm = skip_farm
         self.hotkey_listener = hotkey_listener
         self.config_path = config_path
 
@@ -225,6 +231,7 @@ class WebControlPanel:
             "campaign": hk.get("campaign_toggle", "b").upper(),
             "pvp": hk.get("pvp_toggle", "p").upper(),
             "autoclicker": hk.get("auto_clicker_toggle", "c").upper(),
+            "skip": hk.get("skip_toggle", "k").upper(),
         }
         self._webview_window = webview.create_window(
             "Summon Heroes Macro",
@@ -278,6 +285,16 @@ class WebControlPanel:
                 "recoveries": s["recoveries"],
             }
 
+        skip_stats = {"runtime": 0, "doors_entered": 0, "farm_teleports": 0, "recoveries": 0}
+        if self.skip_farm is not None:
+            s = self.skip_farm.stats
+            skip_stats = {
+                "runtime": self.skip_farm.runtime_seconds(),
+                "doors_entered": s["doors_entered"],
+                "farm_teleports": s["farm_teleports"],
+                "recoveries": s["recoveries"],
+            }
+
         return {
             "story_on": self.story_running_event.is_set(),
             "campaign_on": self.campaign_running_event is not None and self.campaign_running_event.is_set(),
@@ -290,6 +307,9 @@ class WebControlPanel:
             "autoclicker_on": self.auto_clicker_running_event is not None and self.auto_clicker_running_event.is_set(),
             "autoclicker_clicks": self.auto_clicker.stats["clicks"] if self.auto_clicker is not None else 0,
             "autoclicker_log": self._drain(self.auto_clicker_log_queue),
+            "skip_on": self.skip_running_event is not None and self.skip_running_event.is_set(),
+            "skip_stats": skip_stats,
+            "skip_log": self._drain(self.skip_log_queue),
         }
 
     def _drain(self, q: "queue.Queue[str] | None") -> list:
@@ -345,6 +365,17 @@ class WebControlPanel:
     def stop_autoclicker(self) -> None:
         if self.auto_clicker_running_event is not None:
             self.auto_clicker_running_event.clear()
+
+    def start_skip(self) -> None:
+        if self.skip_running_event is None:
+            return
+        self.skip_running_event.set()
+        self.story_running_event.clear()
+        self.towers_running_event.clear()
+
+    def stop_skip(self) -> None:
+        if self.skip_running_event is not None:
+            self.skip_running_event.clear()
 
     def rebind_autoclicker(self, js_key: str) -> str:
         new_key = _normalize_rebind_key(js_key)

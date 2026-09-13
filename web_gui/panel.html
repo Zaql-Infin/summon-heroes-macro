@@ -71,6 +71,7 @@
   .side-btn:nth-child(2) { animation-delay: -1s; }
   .side-btn:nth-child(3) { animation-delay: -2s; }
   .side-btn:nth-child(4) { animation-delay: -3s; }
+  .side-btn:nth-child(5) { animation-delay: -0.5s; }
   @keyframes bubble-idle {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-3px); }
@@ -214,6 +215,7 @@
       <button class="side-btn" data-tab="towers"><span class="dot" id="towers-nav-dot"></span>Towers</button>
       <button class="side-btn" data-tab="pvp"><span class="dot" id="pvp-nav-dot"></span>PvP</button>
       <button class="side-btn" data-tab="autoclicker"><span class="dot" id="ac-nav-dot"></span>Auto Clicker</button>
+      <button class="side-btn" data-tab="skip"><span class="dot" id="skip-nav-dot"></span>Skip</button>
     </div>
 
     <div id="content-wrap">
@@ -287,6 +289,25 @@
           <div class="log-label">Activity Log</div>
           <div class="log-box" id="ac-log"></div>
         </div>
+
+        <!-- Skip -->
+        <div class="tab-pane hidden-pane" id="tab-skip">
+          <div class="status-row"><div class="status-dot" id="skip-dot"></div><div class="status-text" id="skip-status">STOPPED</div></div>
+          <div class="btn-row">
+            <button class="action run" onclick="api.start_skip()">▶ Start</button>
+            <button class="action stop" onclick="api.stop_skip()">■ Stop</button>
+          </div>
+          <div class="hint" id="skip-hotkey">Hotkey: K = toggle</div>
+          <div class="hint">Finds the Skip door, walks through it, then spams teleport-to-hero every 3s until the Skip door reappears (e.g. after dying and respawning) — then does it again, on loop, until stopped.</div>
+          <div class="stat-grid">
+            <div class="stat-cell"><div class="val" id="skip-runtime">00:00</div><div class="cap">Runtime</div></div>
+            <div class="stat-cell"><div class="val" id="skip-doors">0</div><div class="cap">Doors Entered</div></div>
+            <div class="stat-cell"><div class="val" id="skip-teleports">0</div><div class="cap">Farm Teleports</div></div>
+            <div class="stat-cell"><div class="val" id="skip-recoveries">0</div><div class="cap">Recovery Events</div></div>
+          </div>
+          <div class="log-label">Activity Log</div>
+          <div class="log-box" id="skip-log"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -343,6 +364,7 @@
     document.getElementById("towers-hotkey").textContent = `Hotkey: ${hk.towers} = toggle enable/pause`;
     document.getElementById("pvp-hotkey").textContent = `Hotkey: ${hk.pvp} = toggle`;
     document.getElementById("ac-hotkey").textContent = `Hotkey: ${hk.autoclicker}`;
+    document.getElementById("skip-hotkey").textContent = `Hotkey: ${hk.skip} = toggle`;
     if (hk.campaign) {
       document.getElementById("campaign-key").textContent = hk.campaign;
       document.getElementById("campaign-status").textContent =
@@ -488,6 +510,18 @@
       acStatus.classList.toggle("on", s.autoclicker_on);
       document.getElementById("ac-clicks").textContent = s.autoclicker_clicks;
       appendLog("ac-log", s.autoclicker_log);
+
+      // Skip
+      document.getElementById("skip-dot").classList.toggle("on", s.skip_on);
+      document.getElementById("skip-nav-dot").classList.toggle("on", s.skip_on);
+      const skipStatus = document.getElementById("skip-status");
+      skipStatus.textContent = s.skip_on ? "RUNNING" : "STOPPED";
+      skipStatus.classList.toggle("on", s.skip_on);
+      document.getElementById("skip-runtime").textContent = fmtTime(s.skip_stats.runtime);
+      document.getElementById("skip-doors").textContent = s.skip_stats.doors_entered;
+      document.getElementById("skip-teleports").textContent = s.skip_stats.farm_teleports;
+      document.getElementById("skip-recoveries").textContent = s.skip_stats.recoveries;
+      appendLog("skip-log", s.skip_log);
     });
   }
 </script>

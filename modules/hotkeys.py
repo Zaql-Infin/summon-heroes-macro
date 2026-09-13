@@ -46,6 +46,7 @@ class HotkeyListener:
         campaign_running_event: threading.Event | None = None,
         pvp_running_event: threading.Event | None = None,
         auto_clicker_running_event: threading.Event | None = None,
+        skip_running_event: threading.Event | None = None,
     ):
         hk = config["hotkeys"]
         self.start_key = _normalize(hk["start"])
@@ -54,6 +55,7 @@ class HotkeyListener:
         self.campaign_key = _normalize(hk.get("campaign_toggle", "f9"))
         self.pvp_key = _normalize(hk.get("pvp_toggle", "p"))
         self.auto_clicker_key = _normalize(hk.get("auto_clicker_toggle", "c"))
+        self.skip_key = _normalize(hk.get("skip_toggle", "k"))
 
         # User-requested (2026-09-12): hotkeys used to fire no matter which
         # window had focus (the whole point of a "global" hotkey) — now
@@ -69,6 +71,7 @@ class HotkeyListener:
         self.campaign_running_event = campaign_running_event
         self.pvp_running_event = pvp_running_event
         self.auto_clicker_running_event = auto_clicker_running_event
+        self.skip_running_event = skip_running_event
         self.logger = logger
 
         self._listener = keyboard.Listener(on_press=self._on_press)
@@ -87,6 +90,7 @@ class HotkeyListener:
             self.campaign_running_event,
             self.pvp_running_event,
             self.auto_clicker_running_event,
+            self.skip_running_event,
         ):
             if ev is not None and ev is not keep:
                 ev.clear()
@@ -160,6 +164,15 @@ class HotkeyListener:
                 self.logger.info("Auto Clicker hotkey pressed — Auto Clicker starting.")
                 self.auto_clicker_running_event.set()
                 self._stop_all_except(self.auto_clicker_running_event)
+
+        elif name == self.skip_key and self.skip_running_event is not None:
+            if self.skip_running_event.is_set():
+                self.logger.info("Skip hotkey pressed — Skip farm stopping.")
+                self.skip_running_event.clear()
+            else:
+                self.logger.info("Skip hotkey pressed — Skip farm starting.")
+                self.skip_running_event.set()
+                self._stop_all_except(self.skip_running_event)
 
     def start(self) -> None:
         self._listener.start()

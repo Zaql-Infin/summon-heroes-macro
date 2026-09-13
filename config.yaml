@@ -117,6 +117,7 @@ hotkeys:
   campaign_toggle: "b"    # Story campaign: toggle enable/pause
   pvp_toggle: "p"          # PvP spam-click: toggle enable/pause
   auto_clicker_toggle: "x" # Auto Clicker: toggle enable/pause — rebindable live from the GUI's Auto Clicker tab
+  skip_toggle: "k"         # Skip farm: toggle enable/pause
   # User-requested (2026-09-12): only act on hotkeys while Roblox itself is
   # the focused window (checked via the window title, see
   # input_sim.is_roblox_foreground) — so e.g. typing "b" in Discord or a
@@ -188,6 +189,77 @@ auto_clicker:
   # pynput call overhead dominates below that) while still registering
   # every click.
   interval_seconds: 0.01
+
+# =============================================================================
+# Skip mode only, below this line.
+# =============================================================================
+
+skip_farm:
+  # "Skip" mode (2026-09-13, user-requested): a dedicated, standalone loop
+  # — its own hotkey (hotkeys.skip_toggle), own GUI tab — completely
+  # independent of Towers' multi-door-type priority system. Only ever
+  # looks for ONE door type, "skip". Cycle: teleport-to-hero while
+  # searching for it -> walk to/through it once found (reuses the same
+  # click-to-move approach_and_enter logic Towers mode uses) -> spam the
+  # teleport-to-hero button every farm_teleport_interval_seconds in a loop
+  # -> the moment the Skip door becomes visible again (e.g. after dying
+  # and respawning back where it's visible) walk to it again -> repeat
+  # forever until toggled off. See modules/skip_farm.py for the full
+  # design reasoning.
+  #
+  # No template is shipped for this door type — nobody involved in
+  # building this has seen what it looks like in-game. Capture it
+  # yourself with:
+  #   python tools/capture_template.py templates/door_archway_skip.png
+  # while a Skip door is visible, then point template_path at it (already
+  # defaults to that same path, so capturing it there is enough).
+  template_path: "templates/door_archway_skip.png"
+  match_threshold: 0.75
+  # Optional [x, y, w, h] override — null uses door_detection.search_region
+  # (the same "not in the HUD strips" band every other door search uses).
+  search_region:
+  # How often to click teleport-to-hero while SEARCHING for the door (not
+  # yet found) — same idea as teleport_to_hero.interval_seconds below,
+  # kept separate since this mode doesn't touch that section at all.
+  # Tightened 2026-09-13 (user: "it's got a timer" — the tower run is on
+  # a clock, so slow polling here wastes run time). Also fixed a bug the
+  # same day where the farm loop was sleeping TWICE per tick (both its
+  # own interval and a min() of both intervals back to back), silently
+  # doubling every wait in that loop.
+  teleport_interval_seconds: 1.5
+  door_check_interval_seconds: 0.75
+  # Once through the door: how often to spam teleport-to-hero, and how
+  # often to re-check whether the Skip door has become visible again
+  # (whichever of the two intervals is shorter actually paces the loop —
+  # see _farm_until_skip_reappears).
+  farm_teleport_interval_seconds: 1.5
+  farm_door_check_interval_seconds: 1.0
+  # User-requested (2026-09-13): after walking through the door, jump this
+  # many times (post_entry_jump_interval_seconds apart) before settling
+  # into the teleport-farm loop above. Skip-mode-only — Towers' shared
+  # approach_and_enter logic still just jumps once, unaffected by this.
+  post_entry_jump_count: 5
+  post_entry_jump_interval_seconds: 1.0
+  # User-requested (2026-09-13): a "TOWER RUN ENDED!" results banner shows
+  # up after dying — pause everything for run_ended_pause_seconds while
+  # it's up instead of teleporting/scanning through it. OCR-based (see
+  # modules/skip_farm.py for why); no region restriction by default
+  # (checks the full frame) since its exact position wasn't known when
+  # this was written — narrow it with run_ended_ocr_region ([x,y,w,h]) if
+  # it turns out slow or to false-match something else.
+  run_ended_keyword: "RUN ENDED"
+  run_ended_ocr_region:
+  run_ended_pause_seconds: 13.0
+  # Fixed 2026-09-13: this OCR check was running on every single poll and
+  # was the main cause of the whole mode running slow (full-frame OCR is
+  # much more expensive than the small-region OCR used elsewhere) — now
+  # only actually runs once every run_ended_check_interval_seconds.
+  run_ended_check_interval_seconds: 2.0
+  # User-requested (2026-09-13): zoom the camera out once every time a
+  # search cycle starts again (i.e. every time back around the main loop
+  # — including after dying and respawning). Number of scroll-wheel
+  # clicks to zoom out by; set to 0 to disable.
+  zoom_out_clicks_on_restart: 4
 
 # =============================================================================
 # Towers mode only, below this line.

@@ -90,7 +90,7 @@ def _relaunch_elevated_if_needed() -> None:
 _check_for_update_and_exit_if_updating()
 _relaunch_elevated_if_needed()
 
-from modules import vision, input_sim, hotkeys, logging_setup, web_gui, towers, story_campaign, pvp_spam, auto_clicker, version
+from modules import vision, input_sim, hotkeys, logging_setup, web_gui, towers, story_campaign, pvp_spam, auto_clicker, skip_farm, version
 
 
 def _deep_update(target: dict, overrides: dict) -> None:
@@ -182,6 +182,7 @@ class MacroApp:
         self.campaign_running_event = threading.Event()
         self.pvp_running_event = threading.Event()
         self.auto_clicker_running_event = threading.Event()
+        self.skip_running_event = threading.Event()
         self._shutdown_flag = threading.Event()
 
         self.towers_log_queue: "queue.Queue[str]" = queue.Queue()
@@ -213,6 +214,16 @@ class MacroApp:
             config, self.auto_clicker_running_event, self.logger, log_callback=self.auto_clicker_log_queue.put
         )
 
+        self.skip_log_queue: "queue.Queue[str]" = queue.Queue()
+        self.skip_farm = skip_farm.SkipFarm(
+            config,
+            self.capture,
+            self.teleport_to_hero,
+            self.skip_running_event,
+            self.logger,
+            log_callback=self.skip_log_queue.put,
+        )
+
         self.hotkey_listener = hotkeys.HotkeyListener(
             config,
             self.story_running_event,
@@ -221,6 +232,7 @@ class MacroApp:
             campaign_running_event=self.campaign_running_event,
             pvp_running_event=self.pvp_running_event,
             auto_clicker_running_event=self.auto_clicker_running_event,
+            skip_running_event=self.skip_running_event,
         )
 
         self.gui = web_gui.WebControlPanel(
@@ -237,6 +249,9 @@ class MacroApp:
             auto_clicker_running_event=self.auto_clicker_running_event,
             auto_clicker_log_queue=self.auto_clicker_log_queue,
             auto_clicker=self.auto_clicker,
+            skip_running_event=self.skip_running_event,
+            skip_log_queue=self.skip_log_queue,
+            skip_farm=self.skip_farm,
             hotkey_listener=self.hotkey_listener,
             config_path="config.yaml",
         )
@@ -251,6 +266,10 @@ class MacroApp:
         self.towers_automation.navigator.show_overlays_fn = self.gui.show_overlays_after_capture
         self.story_campaign.hide_overlays_fn = self.gui.hide_overlays_for_capture
         self.story_campaign.show_overlays_fn = self.gui.show_overlays_after_capture
+        self.skip_farm.hide_overlays_fn = self.gui.hide_overlays_for_capture
+        self.skip_farm.show_overlays_fn = self.gui.show_overlays_after_capture
+        self.skip_farm.navigator.hide_overlays_fn = self.gui.hide_overlays_for_capture
+        self.skip_farm.navigator.show_overlays_fn = self.gui.show_overlays_after_capture
 
     def teleport_to_hero(self) -> None:
         # The teleport button is a fixed 2D HUD element that never actually
@@ -279,9 +298,11 @@ class MacroApp:
         threading.Thread(target=self.story_campaign.run, daemon=True, name="CampaignLoop").start()
         threading.Thread(target=self.pvp_spam.run, daemon=True, name="PvpSpamLoop").start()
         threading.Thread(target=self.auto_clicker.run, daemon=True, name="AutoClickerLoop").start()
+        threading.Thread(target=self.skip_farm.run, daemon=True, name="SkipFarmLoop").start()
         self.logger.info(
             f"Macro ready (v{version.APP_VERSION}). Story: F6 start / F7 stop. Towers: F8 toggle. "
-            f"Campaign: B toggle. PvP: P toggle. Auto Clicker: {self.hotkey_listener.auto_clicker_key.upper()} toggle."
+            f"Campaign: B toggle. PvP: P toggle. Auto Clicker: {self.hotkey_listener.auto_clicker_key.upper()} toggle. "
+            f"Skip: {self.hotkey_listener.skip_key.upper()} toggle."
         )
 
         try:
@@ -302,6 +323,7 @@ class MacroApp:
         self.story_campaign.stop()
         self.pvp_spam.stop()
         self.auto_clicker.stop()
+        self.skip_farm.stop()
         self.hotkey_listener.stop()
         self.logger.info("Macro stopped cleanly.")
 
