@@ -70,7 +70,13 @@ features:
 resolution_profiles:
   1920x1080:
     teleport_button:
-      fallback_coordinate: [1165, 1023]
+      # Recalibrated 2026-09-14 from a real 1920x1080 in-game screenshot
+      # (user-reported: public-release Skip mode was clicking slightly off
+      # the teleport button) — the old [1165, 1023] was the untested flat
+      # 0.75x scale of the 2560x1440 baseline; the button's actual on-screen
+      # position isn't a uniform scale of that (same caveat this section's
+      # header already notes for 1920x1080 in general).
+      fallback_coordinate: [1222, 1017]
     pvp_spam:
       click_coordinate: [150, 220]
       elo_region: [139, 186, 113, 26]
