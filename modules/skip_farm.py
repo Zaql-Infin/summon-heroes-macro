@@ -83,6 +83,17 @@ class SkipFarm:
         skip_nav_cfg["door_detection"]["match_threshold"] = sf_cfg.get("match_threshold", 0.75)
         if sf_cfg.get("search_region") is not None:
             skip_nav_cfg["door_detection"]["search_region"] = sf_cfg["search_region"]
+        # Bug fixed 2026-09-17 (user-reported: Skip mode never detecting the
+        # door on a friend's 1920x1080 laptop) — a real screenshot from that
+        # setup measured the door's on-screen size at roughly 0.5x the
+        # captured template's size, below vision.DOOR_SCALES' 0.65 floor, so
+        # no scale step could ever have matched it. Only widening it here,
+        # not the shared default vision.DOOR_SCALES/Towers' navigator — this
+        # is affordable per-poll because Skip only ever matches ONE
+        # template, unlike Towers' full multi-template search.
+        skip_nav_cfg["door_detection"]["scales"] = sf_cfg.get(
+            "template_scales", [0.35, 0.45, 0.55, 0.65, 0.85, 1.0, 1.2, 1.4]
+        )
         self.navigator = navigation.DoorNavigator(skip_nav_cfg, capture, logger)
 
         self.teleport_interval_seconds = sf_cfg.get("teleport_interval_seconds", 1.5)

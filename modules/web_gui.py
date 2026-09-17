@@ -36,6 +36,8 @@ import math
 import mimetypes
 import os
 import queue
+import subprocess
+import sys
 import threading
 import tkinter as tk
 
@@ -93,6 +95,23 @@ def _normalize_rebind_key(js_key: str) -> str | None:
         return None
     name = js_key.lower()
     return _REBIND_KEY_OVERRIDES.get(name, name)
+
+
+# User-requested (2026-09-17): "make it all easier to customize everything
+# from the UI" — generalizes the rebind flow that used to only cover Auto
+# Clicker to every hotkey. Maps the GUI's short name for each hotkey to
+# (config.yaml's hotkeys.<key>, the matching attribute on HotkeyListener)
+# so one rebind_hotkey() method can handle all of them instead of one
+# hand-written method per hotkey.
+_HOTKEY_FIELD_MAP = {
+    "start": ("start", "start_key"),
+    "stop": ("stop", "stop_key"),
+    "towers": ("towers_toggle", "towers_key"),
+    "campaign": ("campaign_toggle", "campaign_key"),
+    "pvp": ("pvp_toggle", "pvp_key"),
+    "autoclicker": ("auto_clicker_toggle", "auto_clicker_key"),
+    "skip": ("skip_toggle", "skip_key"),
+}
 
 
 def _set_transparent_color(window: tk.Misc, color: str) -> None:
@@ -168,6 +187,18 @@ class WebControlPanel:
         self.towers_enabled = towers_enabled
 
         self.screen_region = config["screen"]["game_region"]
+        # User-requested (2026-09-17): resolution as a GUI setting instead
+        # of a config.yaml edit — the presets offered are just whatever
+        # resolution_profiles this config.yaml happens to have calibrated
+        # entries for (see config.yaml's own comment on that section);
+        # "Custom" covers anything else. Changing it only writes
+        # screen.width/height/game_region — it can't recompute the actual
+        # per-element coordinates that main.py's _apply_resolution_profile
+        # applies at startup, so a resolution change needs a restart (the
+        # UI makes this explicit rather than silently half-applying it).
+        self.screen_width = config["screen"]["width"]
+        self.screen_height = config["screen"]["height"]
+        self.resolution_presets = sorted(config.get("resolution_profiles", {}).keys())
 
         overlay_cfg = config.get("overlay", {})
         self.banner_text = overlay_cfg.get("text", "AFK FARMING")
@@ -281,6 +312,8 @@ class WebControlPanel:
             "bg_image": bg_image,
             "hotkeys": self._hotkeys,
             "towers_enabled": self.towers_enabled,
+            "resolution": [self.screen_width, self.screen_height],
+            "resolution_presets": self.resolution_presets,
         }
 
     def get_state(self) -> dict:
@@ -389,19 +422,60 @@ class WebControlPanel:
         if self.skip_running_event is not None:
             self.skip_running_event.clear()
 
-    def rebind_autoclicker(self, js_key: str) -> str:
+    def rebind_hotkey(self, name: str, js_key: str) -> str:
+        """Generic rebind covering every hotkey (2026-09-17) — replaces the
+        old one-off rebind_autoclicker. `name` is the GUI's short name for
+        the hotkey (see _HOTKEY_FIELD_MAP), not the config.yaml key."""
+        mapping = _HOTKEY_FIELD_MAP.get(name)
+        if mapping is None:
+            return self._hotkeys.get(name, "")
+        config_key, listener_attr = mapping
         new_key = _normalize_rebind_key(js_key)
         if not new_key:
-            return self._hotkeys["autoclicker"]
-        self._hotkeys["autoclicker"] = new_key.upper()
+            return self._hotkeys[name]
+        self._hotkeys[name] = new_key.upper()
         if self.hotkey_listener is not None:
-            self.hotkey_listener.auto_clicker_key = new_key.lower()
-        self._save_config_value("hotkeys", "auto_clicker_toggle", new_key.lower())
+            setattr(self.hotkey_listener, listener_attr, new_key.lower())
+        self._save_config_value("hotkeys", config_key, new_key.lower())
         return new_key.upper()
 
     def set_background_color(self, hex_color: str) -> None:
         self.bg_color = hex_color
         self._save_config_value("gui", "background_color", hex_color)
+
+    def set_resolution(self, width, height) -> dict:
+        try:
+            width = int(width)
+            height = int(height)
+            if width < 640 or height < 480 or width > 10000 or height > 10000:
+                return {"ok": False, "error": "That doesn't look like a real resolution."}
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Width/height must be numbers."}
+        self.screen_width = width
+        self.screen_height = height
+        self._save_config_value("screen", "width", width)
+        self._save_config_value("screen", "height", height)
+        self._save_config_value("screen", "game_region", [0, 0, width, height])
+        return {"ok": True}
+
+    def restart_app(self) -> None:
+        """Relaunches the exe (dev: re-runs the same Python entry point)
+        and closes this one — used after a resolution change, since the
+        per-element coordinate scaling in main.py's _apply_resolution_
+        profile only runs once at startup, not live. Closes via the
+        webview window itself (not on_close() directly) so the existing
+        events.closed -> _handle_webview_closed -> on_close() path runs
+        normally and webview.start() actually returns, letting main.py's
+        run() reach its shutdown() cleanup instead of leaving a stuck
+        process still holding input control."""
+        try:
+            if getattr(sys, "frozen", False):
+                subprocess.Popen([sys.executable])
+            else:
+                subprocess.Popen([sys.executable] + sys.argv)
+        except Exception:
+            pass
+        self._webview_window.destroy()
 
     def pick_background_image(self) -> str | None:
         try:
@@ -441,7 +515,16 @@ class WebControlPanel:
             yaml_rt.indent(mapping=2, sequence=4, offset=2)
             with open(self.config_path, "r", encoding="utf-8") as f:
                 doc = yaml_rt.load(f)
-            doc.setdefault(section, {})[key] = value
+            existing = doc.setdefault(section, {}).get(key)
+            # Mutate an existing list in place rather than replacing it with
+            # a plain Python list — ruamel otherwise re-serializes it in
+            # block style (one item per line), losing config.yaml's
+            # existing flow style ([0, 0, 2560, 1440]) for that line.
+            if isinstance(value, list) and hasattr(existing, "__setitem__") and len(existing) == len(value):
+                for i, v in enumerate(value):
+                    existing[i] = v
+            else:
+                doc[section][key] = value
             with open(self.config_path, "w", encoding="utf-8", newline="\n") as f:
                 yaml_rt.dump(doc, f)
         except Exception:

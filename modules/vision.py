@@ -110,16 +110,31 @@ def find_best_of_templates(frame: np.ndarray, templates: list[np.ndarray], thres
 # fixes that — this is the reason this project moved from AHK to Python.
 # Trimmed from 7 to 5 steps for speed (each extra step is a full extra
 # matchTemplate pass per template) — still covers close/medium/far.
-_DOOR_SCALES = [0.65, 0.85, 1.0, 1.2, 1.4]
+#
+# This is only a DEFAULT — every function below takes an optional `scales`
+# override (DoorNavigator reads door_detection.scales from config.yaml, per
+# navigator instance, so e.g. Skip mode's single-template search can use a
+# wider/cheaper range without changing Towers' shared multi-template one).
+# Bug fixed 2026-09-17 (user-reported: Skip mode never detecting the door
+# on a friend's 1920x1080 laptop, "just keeps trying to find it") — a real
+# screenshot from that laptop measured the door's actual on-screen size at
+# roughly 0.5x the captured template's size, below this range's 0.65 floor,
+# so no scale step could ever have matched it regardless of resolution or
+# match_threshold. Not a resolution-specific bug (screen resolution and
+# apparent door size aren't the same thing — camera distance matters too);
+# skip_farm.py now requests a wider range that reaches down to 0.35.
+DOOR_SCALES = [0.65, 0.85, 1.0, 1.2, 1.4]
 
 
-def find_template_multiscale(frame: np.ndarray, template: np.ndarray, threshold: float) -> Optional[Match]:
+def find_template_multiscale(
+    frame: np.ndarray, template: np.ndarray, threshold: float, scales: Optional[list] = None,
+) -> Optional[Match]:
     if template is None or template.size == 0:
         return None
 
     best: Optional[Match] = None
     th, tw = template.shape[:2]
-    for scale in _DOOR_SCALES:
+    for scale in (scales or DOOR_SCALES):
         w = int(tw * scale)
         h = int(th * scale)
         if w < 8 or h < 8 or h > frame.shape[0] or w > frame.shape[1]:
@@ -134,6 +149,7 @@ def find_template_multiscale(frame: np.ndarray, template: np.ndarray, threshold:
 
 def find_template_multiscale_near(
     frame: np.ndarray, template: np.ndarray, threshold: float, near_x: float, window: float,
+    scales: Optional[list] = None,
 ) -> Optional[Match]:
     """Same as find_template_multiscale, but only searches a horizontal band
     around near_x (± window pixels) instead of the whole frame. Needed when
@@ -155,25 +171,28 @@ def find_template_multiscale_near(
         return None
     cropped = frame[:, x0:x1]
 
-    m = find_template_multiscale(cropped, template, threshold)
+    m = find_template_multiscale(cropped, template, threshold, scales=scales)
     if m is None:
         return None
     return Match(x=m.x + x0, y=m.y, w=m.w, h=m.h, score=m.score)
 
 
-def find_best_of_templates_multiscale(frame: np.ndarray, templates: list[np.ndarray], threshold: float) -> Optional[Match]:
+def find_best_of_templates_multiscale(
+    frame: np.ndarray, templates: list[np.ndarray], threshold: float, scales: Optional[list] = None,
+) -> Optional[Match]:
     """Same as find_best_of_templates, but scans each door template across a
     range of scales so distance-to-camera no longer breaks the match."""
     best: Optional[Match] = None
     for tmpl in templates:
-        m = find_template_multiscale(frame, tmpl, threshold)
+        m = find_template_multiscale(frame, tmpl, threshold, scales=scales)
         if m and (best is None or m.score > best.score):
             best = m
     return best
 
 
 def find_all_named_templates_multiscale(
-    frame: np.ndarray, named_templates: list[tuple[str, np.ndarray]], threshold: float
+    frame: np.ndarray, named_templates: list[tuple[str, np.ndarray]], threshold: float,
+    scales: Optional[list] = None,
 ) -> list[tuple[str, Match]]:
     """Runs every (name, template) pair against the frame independently and
     returns every one that matched — e.g. every door type currently visible
@@ -181,7 +200,7 @@ def find_all_named_templates_multiscale(
     rank by door type rather than by raw match confidence."""
     found: list[tuple[str, Match]] = []
     for name, tmpl in named_templates:
-        m = find_template_multiscale(frame, tmpl, threshold)
+        m = find_template_multiscale(frame, tmpl, threshold, scales=scales)
         if m:
             found.append((name, m))
     return found

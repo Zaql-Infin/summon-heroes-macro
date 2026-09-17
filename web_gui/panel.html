@@ -72,6 +72,7 @@
   .side-btn:nth-child(3) { animation-delay: -2s; }
   .side-btn:nth-child(4) { animation-delay: -3s; }
   .side-btn:nth-child(5) { animation-delay: -0.5s; }
+  .side-btn:nth-child(6) { animation-delay: -1.5s; }
   @keyframes bubble-idle {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-3px); }
@@ -180,6 +181,27 @@
   .click-cell .val { font-size: 18px; font-weight: 700; }
   .click-cell .cap { font-size: 10px; color: var(--muted); }
 
+  .settings-card {
+    margin-bottom: 16px; padding: 12px 14px; border-radius: 12px;
+    background: rgba(58, 33, 88, 0.35); border: 1px solid rgba(162, 89, 255, 0.35);
+  }
+  .settings-card h3 {
+    margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--fg);
+  }
+  .settings-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin: 6px 0; font-size: 12px;
+  }
+  .settings-row .label { color: var(--muted); }
+  select.settings-input, input.settings-input {
+    background: var(--panel-solid); color: var(--fg); border: 1px solid rgba(162, 89, 255, 0.35);
+    border-radius: 6px; padding: 4px 8px; font-size: 12px; font-family: inherit;
+  }
+  input.settings-input[type="number"] { width: 72px; }
+  .settings-actions { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+  .settings-note { font-size: 10.5px; color: var(--muted); margin-top: 6px; text-align: center; }
+  .settings-note.warn { color: var(--accent-pause); }
+
   .campaign-card {
     margin-top: 14px; padding: 12px 14px; border-radius: 12px;
     background: rgba(58, 33, 88, 0.35); border: 1px solid rgba(162, 89, 255, 0.35);
@@ -237,6 +259,7 @@
       <button class="side-btn" data-tab="pvp"><span class="dot" id="pvp-nav-dot"></span>PvP</button>
       <button class="side-btn" data-tab="autoclicker"><span class="dot" id="ac-nav-dot"></span>Auto Clicker</button>
       <button class="side-btn" data-tab="skip"><span class="dot" id="skip-nav-dot"></span>Skip</button>
+      <button class="side-btn" data-tab="settings">⚙ Settings</button>
     </div>
 
     <div id="content-wrap">
@@ -309,7 +332,7 @@
           </div>
           <div class="rebind-row">
             <span class="hint" id="ac-hotkey" style="margin:0;">Hotkey: C</span>
-            <button class="rebind-btn" id="ac-rebind-btn" onclick="startRebind()">Rebind</button>
+            <button class="rebind-btn" onclick="startRebindFor('autoclicker','ac-hotkey','Hotkey', this)">Rebind</button>
           </div>
           <div class="hint">Clicks at the current cursor position nonstop while running — move the mouse where you want it clicking.</div>
           <div class="click-cell"><div class="val" id="ac-clicks">0</div><div class="cap">Clicks</div></div>
@@ -334,6 +357,47 @@
           </div>
           <div class="log-label">Activity Log</div>
           <div class="log-box" id="skip-log"></div>
+        </div>
+
+        <!-- Settings -->
+        <div class="tab-pane hidden-pane" id="tab-settings">
+          <div class="settings-card">
+            <h3>Resolution</h3>
+            <div class="settings-row">
+              <span class="label">Preset</span>
+              <select class="settings-input" id="res-preset"></select>
+            </div>
+            <div class="settings-row" id="res-custom-row" hidden>
+              <span class="label">Width × Height</span>
+              <span>
+                <input class="settings-input" type="number" id="res-width" min="640" max="10000">
+                ×
+                <input class="settings-input" type="number" id="res-height" min="480" max="10000">
+              </span>
+            </div>
+            <div class="settings-actions">
+              <button class="action run" onclick="saveResolution()">Save</button>
+            </div>
+            <div class="settings-note" id="res-current"></div>
+            <div class="settings-note warn">Requires a restart to take effect.</div>
+          </div>
+
+          <div class="settings-card">
+            <h3>Hotkeys</h3>
+            <div class="rebind-row"><span class="hint" style="margin:0;" id="set-hk-start">Start: F6</span><button class="rebind-btn" onclick="startRebindFor('start','set-hk-start','Start', this)">Rebind</button></div>
+            <div class="rebind-row"><span class="hint" style="margin:0;" id="set-hk-stop">Stop: F7</span><button class="rebind-btn" onclick="startRebindFor('stop','set-hk-stop','Stop', this)">Rebind</button></div>
+            <div class="rebind-row"><span class="hint" style="margin:0;" id="set-hk-towers">Towers: F8</span><button class="rebind-btn" onclick="startRebindFor('towers','set-hk-towers','Towers', this)">Rebind</button></div>
+            <div class="rebind-row"><span class="hint" style="margin:0;" id="set-hk-campaign">Campaign: B</span><button class="rebind-btn" onclick="startRebindFor('campaign','set-hk-campaign','Campaign', this)">Rebind</button></div>
+            <div class="rebind-row"><span class="hint" style="margin:0;" id="set-hk-pvp">PvP: P</span><button class="rebind-btn" onclick="startRebindFor('pvp','set-hk-pvp','PvP', this)">Rebind</button></div>
+            <div class="rebind-row"><span class="hint" style="margin:0;" id="set-hk-autoclicker">Auto Clicker: C</span><button class="rebind-btn" onclick="startRebindFor('autoclicker','set-hk-autoclicker','Auto Clicker', this)">Rebind</button></div>
+            <div class="rebind-row"><span class="hint" style="margin:0;" id="set-hk-skip">Skip: K</span><button class="rebind-btn" onclick="startRebindFor('skip','set-hk-skip','Skip', this)">Rebind</button></div>
+          </div>
+
+          <div class="settings-note">Background color/image: use the swatch and 🖼️ buttons in the top-right corner.</div>
+
+          <div class="settings-actions">
+            <button class="action pause" onclick="api.restart_app()">⟳ Restart App</button>
+          </div>
         </div>
       </div>
     </div>
@@ -370,6 +434,12 @@
       if (state.bg_image) applyBgImage(state.bg_image);
       if (state.hotkeys) applyHotkeys(state.hotkeys);
       applyTowersEnabled(state.towers_enabled !== false);
+      initResolutionUI(state.resolution, state.resolution_presets);
+    });
+
+    document.getElementById("res-preset").addEventListener("change", (e) => {
+      const custom = e.target.value === "custom";
+      document.getElementById("res-custom-row").hidden = !custom;
     });
 
     setInterval(poll, 300);
@@ -407,6 +477,61 @@
       document.getElementById("campaign-status").textContent =
         `Off — press ${hk.campaign} (in-game) to start the full loop`;
     }
+    document.getElementById("set-hk-start").textContent = `Start: ${hk.start}`;
+    document.getElementById("set-hk-stop").textContent = `Stop: ${hk.stop}`;
+    document.getElementById("set-hk-towers").textContent = `Towers: ${hk.towers}`;
+    document.getElementById("set-hk-campaign").textContent = `Campaign: ${hk.campaign}`;
+    document.getElementById("set-hk-pvp").textContent = `PvP: ${hk.pvp}`;
+    document.getElementById("set-hk-autoclicker").textContent = `Auto Clicker: ${hk.autoclicker}`;
+    document.getElementById("set-hk-skip").textContent = `Skip: ${hk.skip}`;
+  }
+
+  function initResolutionUI(current, presets) {
+    const sel = document.getElementById("res-preset");
+    sel.innerHTML = "";
+    (presets || []).forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      sel.appendChild(opt);
+    });
+    const customOpt = document.createElement("option");
+    customOpt.value = "custom";
+    customOpt.textContent = "Custom…";
+    sel.appendChild(customOpt);
+
+    const [w, h] = current || [2560, 1440];
+    document.getElementById("res-width").value = w;
+    document.getElementById("res-height").value = h;
+    document.getElementById("res-current").textContent = `Current: ${w}x${h}`;
+
+    const match = `${w}x${h}`;
+    if ((presets || []).includes(match)) {
+      sel.value = match;
+      document.getElementById("res-custom-row").hidden = true;
+    } else {
+      sel.value = "custom";
+      document.getElementById("res-custom-row").hidden = false;
+    }
+  }
+
+  function saveResolution() {
+    const sel = document.getElementById("res-preset");
+    let width, height;
+    if (sel.value === "custom") {
+      width = parseInt(document.getElementById("res-width").value, 10);
+      height = parseInt(document.getElementById("res-height").value, 10);
+    } else {
+      [width, height] = sel.value.split("x").map(n => parseInt(n, 10));
+    }
+    api.set_resolution(width, height).then(result => {
+      const note = document.getElementById("res-current");
+      if (result && result.ok) {
+        note.textContent = `Saved: ${width}x${height} — restart to apply.`;
+      } else {
+        note.textContent = (result && result.error) || "Couldn't save that resolution.";
+      }
+    });
   }
 
   // Whole right side "swipes" to the new section: outgoing pane slides out
@@ -473,22 +598,28 @@
     if (atBottom) el.scrollTop = el.scrollHeight;
   }
 
-  function startRebind() {
+  // Generalized 2026-09-17 to cover every hotkey (used to be Auto Clicker
+  // only) — `name` is the short name api.rebind_hotkey() expects (see
+  // _HOTKEY_FIELD_MAP in web_gui.py), `labelId` the element showing
+  // "<Label>: <KEY>", `label` that prefix text, `btn` the clicked button
+  // itself (passed as `this` from the onclick, so the same function works
+  // for every rebind button without needing a unique id per button).
+  function startRebindFor(name, labelId, label, btn) {
     if (rebinding) return;
     rebinding = true;
-    const btn = document.getElementById("ac-rebind-btn");
-    const label = document.getElementById("ac-hotkey");
+    const labelEl = document.getElementById(labelId);
+    const prevText = btn.textContent;
     btn.textContent = "...";
-    label.textContent = "Press any key…";
+    labelEl.textContent = "Press any key…";
     const handler = (e) => {
       e.preventDefault();
       const ignored = ["Shift", "Control", "Alt", "Meta", "CapsLock", "NumLock", "ScrollLock"];
       if (ignored.includes(e.key)) return;
       document.removeEventListener("keydown", handler, true);
       rebinding = false;
-      btn.textContent = "Rebind";
-      api.rebind_autoclicker(e.key).then(newKey => {
-        label.textContent = "Hotkey: " + newKey;
+      btn.textContent = prevText;
+      api.rebind_hotkey(name, e.key).then(newKey => {
+        labelEl.textContent = `${label}: ${newKey}`;
       });
     };
     document.addEventListener("keydown", handler, true);

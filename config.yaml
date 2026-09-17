@@ -232,6 +232,15 @@ skip_farm:
   # defaults to that same path, so capturing it there is enough).
   template_path: "templates/door_archway_skip.png"
   match_threshold: 0.75
+  # Fixed 2026-09-17 (user-reported: door never detected on a 1920x1080
+  # laptop) — the shared door-matching scale range (vision.DOOR_SCALES,
+  # 0.65-1.4) didn't reach low enough for how small the door actually
+  # appeared on that setup; not resolution-specific, apparent door size
+  # depends on camera distance too. Widened just for this one template —
+  # affordable since Skip only ever matches ONE template per check, unlike
+  # Towers' full set. Remove/edit if a future setup needs an even wider
+  # range.
+  template_scales: [0.35, 0.45, 0.55, 0.65, 0.85, 1.0, 1.2, 1.4]
   # Optional [x, y, w, h] override — null uses door_detection.search_region
   # (the same "not in the HUD strips" band every other door search uses).
   search_region:

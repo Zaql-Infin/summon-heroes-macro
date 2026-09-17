@@ -179,6 +179,13 @@ class DoorNavigator:
         # relative, so shrinking both together doesn't change what's
         # findable) on far fewer pixels. Precomputed once here, not per call.
         self.detection_scale = dd.get("detection_scale", 0.45)
+        # Per-navigator override for vision.DOOR_SCALES — None uses that
+        # module default. See vision.py's DOOR_SCALES comment for why this
+        # exists: SkipFarm's second navigator instance (see skip_farm.py)
+        # requests a wider range reaching further down, since it only ever
+        # searches one template and can afford the extra matchTemplate
+        # passes that would be too costly across Towers' full template set.
+        self.door_scales = dd.get("scales")
         self._scaled_templates: list[tuple[str, "vision.np.ndarray"]] = [
             (name, cv2.resize(img, None, fx=self.detection_scale, fy=self.detection_scale,
                                interpolation=cv2.INTER_AREA))
@@ -359,9 +366,12 @@ class DoorNavigator:
         if near_x is not None:
             m = vision.find_template_multiscale_near(
                 search_frame, template, self._LOCATE_MIN_SANE_SCORE, near_x - sx, self._NEAR_X_WINDOW,
+                scales=self.door_scales,
             )
         else:
-            m = vision.find_template_multiscale(search_frame, template, self._LOCATE_MIN_SANE_SCORE)
+            m = vision.find_template_multiscale(
+                search_frame, template, self._LOCATE_MIN_SANE_SCORE, scales=self.door_scales,
+            )
         if m is None:
             return None
         return vision.Match(x=m.x + sx, y=m.y + sy, w=m.w, h=m.h, score=m.score)
@@ -487,7 +497,9 @@ class DoorNavigator:
             # own effective threshold. Matched against the downscaled,
             # region-cropped frame + downscaled templates for speed;
             # rescale/offset coordinates back to real screen space right after.
-            raw_small = vision.find_all_named_templates_multiscale(small_frame, self._scaled_templates, 0.0)
+            raw_small = vision.find_all_named_templates_multiscale(
+                small_frame, self._scaled_templates, 0.0, scales=self.door_scales,
+            )
             raw = [
                 (name, vision.Match(
                     x=int(m.x / scale) + sx, y=int(m.y / scale) + sy,
